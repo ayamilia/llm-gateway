@@ -2,6 +2,8 @@
 
 > 客户端只会说一种api，上游各有各的协议。网关夹在中间：对外一套接口，对内按模型名分流。
 
+更新内容见 [CHANGELOG.md](CHANGELOG.md)。
+
 零依赖，只用 Node 内置模块（`http` / `sqlite` / `crypto` / `zlib`）；一个 `server.mjs` + 一个 `dashboard.html`。需要 Node ≥ 22.5（用了内置 `node:sqlite`）。
 
 ## 它做什么
@@ -35,6 +37,10 @@
 | 首字节保活 | 上游迟迟不吐数据时，先开 SSE 流并每 10s 发注释心跳，绕开反代的 120s 超时 |
 | 订阅周期用量 | 按上游用量接口给的续费时刻切「月付周期」，逐周期列出 token（输入 / 命中缓存 / 输出）、已产生费用、以及费用占该模型月限额的比例。分母基数 `quota.base_usd`（默认 60）、无接口时按 `quota.cycle_day` 切分 |
 | 推理链回灌 | 把 reasoning item 按 `call_id` 归档并插回下一轮，多轮工具调用不再丢思维链 |
+| 联网搜索（可选） | 网关向上游声明一个 `function` 工具 `web_search`，模型一调用就由网关去打搜索 REST、回灌结果再续跑——客户端不用支持任何服务端工具协议。**默认关**，见下 |
+| 搜索 REST 透传 | 上游的独立 Search / Fetch 接口挂成 `/v1/tools/search`、`/v1/tools/fetch`，用网关 key 鉴权、原样透传 |
+| 协议 base 覆盖 | 供应商可配 `format_bases`：某一种协议的上游 base 与 `base_url` 不同时（典型：Anthropic 兼容端点在 `/anthropic/v1`）单独指定，不配就是老行为 |
+| 工具名守卫（可选） | 服务端工具名写错（`web_search` / `web_search_preview` 这类旧名）时直接 400 并给出正确写法，不再让上游 422 或静默不搜 |
 
 ## 协议互转（可选，默认关）
 
@@ -91,6 +97,66 @@
 - 建 key 时默认写入一个替代 UA（`keys[].user_agent`），请求时覆盖供应商的 UA；key 上留空则回落到 `providers.<n>.user_agent`。
 - 想对某个上游手工指定头，直接在 `providers.<n>.extra_headers` 里写 `{"x-upstream-session": "__SESSION__"}` 或固定字符串。
 
+## 联网搜索（可选，默认关）
+
+> 解决的问题：有些上游把联网搜索做成**它自己上游的服务端工具**（`tools[]` 里 `type` 不是 `function`，结果也不在 `tool_calls` 里），只有那一家认；模型走别家中转时完全用不上。
+
+做法反过来：网关向**任意上游**声明一个普通 `function` 工具 `web_search`，模型调用它时由网关自己去打搜索 REST，把结果作为 tool 消息回灌，再续跑一轮。客户端只看到最终答案——**不需要支持任何服务端工具协议**。
+
+```json
+"web_search": {
+  "enabled": true,
+  "base_url": "https://api.example.com/v1",   // 搜索 REST 挂在它下面的 /tools/search、/tools/fetch
+  "api_key_env": "SEARCH_API_KEY",
+  "tool_name": "web_search",
+  "count": 5,            // 每次搜索取几条
+  "need_content": false, // 是否同时抓正文（更慢、更占上下文）
+  "max_rounds": 2,       // 续跑轮数（不是搜索次数）
+  "max_calls": 6,        // 单请求搜索次数硬上限
+  "providers": [],       // 留空＝对所有上游注入
+  "models": []           // 留空＝对所有模型注入
+}
+```
+
+| 项 | 说明 |
+|---|---|
+| 三种客户端协议 | chat / responses / messages 都能用。同协议直通插不进循环，所以开了代理的 responses / messages 请求会自动改走 chat 中枢（日志 `WS INTEROP`） |
+| 不介入的情况 | 客户端自己带了**服务端工具**（`type != "function"`）时完全不注入、也不改道，保持逐字节直通 |
+| 与客户端工具共存 | 客户端自己的 function 工具照常工作；模型同一轮里两类都调时，代理调用由网关执行并续跑，客户端工具调用由模型下一轮重新决定 |
+| 日志 | `WS SEARCH <名> "<query>" <字节>`、`WS ROUND <轮> <客户端>-><上游>`、`WS UPSTREAM ERROR` |
+| 关掉 | `"enabled": false`；`max_rounds <= 0` 也视为关（否则会吞掉调用却不续跑） |
+
+上游如果本来就有独立的 Search / Fetch REST，同一份 `base_url` / `api_key_env` 还会把 `/v1/tools/search`、`/v1/tools/fetch` 挂出来（用网关 key 鉴权、body 原样进、响应原样出）。不想要这两条就设 `"expose_tools_api": false`。
+
+## 工具名守卫（可选，默认不拦任何供应商）
+
+服务端工具名写错时，上游往往只回一个含糊的 422，或者干脆 200 但**静默不搜**（白烧 token）。开这个守卫后直接 400：
+
+```json
+"tool_name_guard": {
+  "enabled": true,
+  "providers": ["upstream-a"],        // 留空＝不拦；["*"]＝全局
+  "bad": ["web_search", "web_search_preview", "web_search_20250305"],
+  "message": "工具名 \"{bad}\" 不被 {provider} 接受，请查上游文档确认正确名字。"
+}
+```
+
+- 只拦「服务端工具形态」（`tools[].type != "function"`）：客户端自己的 function 工具即使叫 `web_search` 也不会被拦。
+- 拦截点在 chat 入口与 responses / messages 入口（`routeFor()` 之后、调上游之前），命中也记一条 `400 tool_name_invalid:<名>`。
+
+## 供应商按协议换 base（`format_bases`）
+
+同一家上游的不同协议不一定在同一个 base 下——典型是 Anthropic 兼容端点在 `<host>/anthropic/v1/messages`，而 `base_url` 是 `<host>/v1`，按 `base_url + /messages` 拼就 404：
+
+```json
+"providers": { "upstream-a": {
+  "base_url": "https://api.example.com/v1",
+  "format_bases": { "messages": "https://api.example.com/anthropic/v1" }
+} }
+```
+
+四个拼接点（chat / responses / messages / gemini）、原生直通、档位探测全部走同一个 `upstreamBase(provider, format)`；不配就是原来的行为。
+
 ## 跑起来
 
 ```bash
@@ -119,6 +185,7 @@ server.mjs              网关核心（路由、三协议翻译、统计、面�
 dashboard.html          面板（单页、无构建，改完刷新即可）
 config.example.json     配置模板
 .env.example            上游 key 模板
+CHANGELOG.md            更新日志
 docker-compose.yml
 scripts/smoke_test.py   冒烟脚本
 scripts/interop_test/   协议互转矩阵回归（假上游 + 第二实例）

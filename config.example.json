@@ -25,7 +25,10 @@
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       "extra_headers": {},
       "thinking_style": "none",
-      "reasoning_echo": false
+      "reasoning_echo": false,
+      "format_bases": {
+        "messages": ""
+      }
     },
     "upstream-b": {
       "base_url": "https://api.upstream-b.example.com/v1",
@@ -119,6 +122,37 @@
     "usage": {
       "url": "",
       "api_key_env": ""
+    },
+    "official_usage": {
+      "url": "",
+      "api_key_env": ""
     }
+  },
+  "web_search": {
+    "enabled": false,
+    "base_url": "https://api.example.com/v1",
+    "api_key_env": "SEARCH_API_KEY",
+    "tool_name": "web_search",
+    "description": "",
+    "count": 5,
+    "need_content": false,
+    "max_rounds": 2,
+    "max_calls": 6,
+    "timeout_ms": 25000,
+    "expose_tools_api": true,
+    "providers": [],
+    "models": []
+  },
+  "tool_name_guard": {
+    "enabled": false,
+    "providers": [],
+    "bad": [
+      "web_search",
+      "web_search_preview",
+      "web_search_20250305",
+      "web_fetch",
+      "web_fetch_20250910"
+    ],
+    "message": ""
   }
 }

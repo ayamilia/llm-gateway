@@ -15,6 +15,7 @@
     --btn:#171208; --btn2:#1a1408; --btn3:#1d160c; --inputbg:#000; --toastbg:#141009;
     --onfg:#000; --dangerline:#5b2a26; --dangerbg:rgba(255,107,97,.08); --hover:rgba(255,176,0,.07);
     --colline:#2a2117; --headwash:rgba(255,176,0,.12);
+    --mmbulk:rgba(255,176,0,.07); --mmsingle:rgba(138,217,198,.07);
     --s1:#ffb000; --s2:#8ad9c6; --s3:#cba7ff; --s4:#ff8c42; --s5:#a8d47f; --s6:#7fb0ff; --s7:#ff9ec4; --s8:#d9c07a; --sx:#5f564d;
     --fs:15px;              /* 基准字号，顶栏可切换 */
   }
@@ -26,6 +27,7 @@
     --btn:#e8dfcc; --btn2:#f2e8d5; --btn3:#f5ecda; --inputbg:#fffdf7; --toastbg:#3a3227;
     --onfg:#fff8ec; --dangerline:#d8a79f; --dangerbg:rgba(176,53,42,.08); --hover:rgba(160,90,0,.10);
     --colline:#e4dac6; --headwash:rgba(160,90,0,.10);
+    --mmbulk:rgba(160,90,0,.07); --mmsingle:rgba(13,111,99,.07);
     --s1:#9c5a00; --s2:#0d6f63; --s3:#6741b8; --s4:#bf5518; --s5:#3b7318; --s6:#1f5fa8; --s7:#a8457a; --s8:#8a6d1f; --sx:#8d8172;
   }
   *{box-sizing:border-box}
@@ -87,6 +89,10 @@
 
   .amber{color:var(--amber)} .green{color:var(--green)} .red{color:var(--red)}
   .dim{color:var(--dim2)} .cyan{color:var(--cyan)} .orange{color:var(--orange)} .violet{color:var(--violet)}
+  .barwrap{position:relative}
+  .ovline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+  .ovline polyline{fill:none;stroke:var(--cyan);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round;opacity:.9}
+  .ovline circle{fill:var(--cyan);stroke:none}
   .bar{height:64px;display:flex;align-items:flex-end;gap:2px}
   .bar .col{flex:1;display:flex;flex-direction:column-reverse;min-height:2px;cursor:default}
   .bar .col>.sg{width:100%;background:var(--s1)}
@@ -106,6 +112,16 @@
   button.act{background:var(--btn3);border:1px solid var(--line);color:var(--amber);font:inherit;
     font-size:calc(var(--fs)*0.9);padding:6px 16px;cursor:pointer}
   button.act:hover{border-color:var(--amber)}
+  /* 加模型：「批量（勾选清单）」与「手动单个」两块用底色+左侧色条区分，防止在单个区点按钮当成批量加 */
+  .mmblk{border:1px solid var(--line2);border-left:3px solid var(--line2);padding:10px 12px;margin-top:12px}
+  .mmblk.bulk{border-left-color:var(--amber);background:var(--mmbulk)}
+  .mmblk.single{border-left-color:var(--cyan);background:var(--mmsingle)}
+  .mmtag{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:calc(var(--fs)*0.88)}
+  .mmtag b{font-weight:400;letter-spacing:.04em}
+  .mmblk.bulk .mmtag b{color:var(--amber)}
+  .mmblk.single .mmtag b{color:var(--cyan)}
+  #mm_bulkadd{background:var(--amber);color:var(--onfg);border-color:var(--amber)}
+  #mm_bulkadd:hover{filter:brightness(1.07)}
   button.danger{color:var(--red);border-color:var(--dangerline);padding:3px 10px;font-size:calc(var(--fs)*0.82)}
   .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
   .field label{color:var(--dim2);font-size:calc(var(--fs)*0.84)}
@@ -141,6 +157,9 @@
   .tcell{display:flex;flex-direction:column;justify-content:center;height:calc(var(--fs)*0.9*1.55);
     line-height:1.0;font-size:calc(var(--fs)*0.76)}
   .tcell .p{font-size:calc(var(--fs)*0.62);color:var(--dim2)}
+  /* 时间列第二行（上游会话 id）：width:0 让它不参与列宽计算，min-width:100% 再撑满时间文本的宽度，
+     超出即省略号截断 —— 列宽始终由上面的时间决定，长 UUID 不会把「时间」列撑宽 */
+  .tcell .osid{display:block;width:0;min-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hidden{display:none !important}
   /* 模型白名单弹层（客户端 key 页） */
   .ovl{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:14px}
@@ -204,6 +223,8 @@
   .roleuser{color:var(--cyan)}
   .apiurl{color:var(--cyan);cursor:pointer;font-size:calc(var(--fs)*.86)}
   .apiurl:hover{text-decoration:underline}
+  .sidcopy{color:var(--amber);cursor:pointer;font-family:ui-monospace,Consolas,'Courier New',monospace;font-size:calc(var(--fs)*.86)}
+  .sidcopy:hover{text-decoration:underline}
   .loginbox code{color:var(--cyan);word-break:break-all}
   #pl_userbox .kmodlist{max-height:200px;overflow:auto;border:1px solid var(--line);padding:4px 6px;margin:6px 0}
 
@@ -295,6 +316,7 @@
     <button data-sub="bymodel">按模型</button>
     <button data-sub="byprovider" class="adminonly">按上游</button>
     <button data-sub="bykey" class="adminonly">按客户端</button>
+    <button data-sub="bysession" class="adminonly">按会话</button>
     <button data-sub="pair" class="adminonly">key × 模型</button>
     <button data-sub="recent">最近请求</button>
   </div>
@@ -355,7 +377,7 @@
         <div class="h"><span id="chart_title">输入 tokens</span>
           <select id="stack_key" title="柱状图按客户端 key 分色：默认全部 key 聚合显示总量，选单个 key 只看它的用量"></select>
           <span class="line"></span><span class="dim" id="chart_sub">按本地时间</span><span id="h24s" class="dim"></span></div>
-        <div class="b"><div class="bar" id="bar"></div><div class="axis" id="axis"></div><div class="legend" id="legend"></div></div>
+        <div class="b"><div class="barwrap"><div class="bar" id="bar"></div><svg class="ovline" id="ovline" viewBox="0 0 100 100" preserveAspectRatio="none"></svg></div><div class="axis" id="axis"></div><div class="legend" id="legend"></div><div class="legend" id="ovlegend"></div></div>
       </div>
       <div class="box" style="margin-top:10px">
         <div class="h">上游额度<span class="line"></span><span class="dim" id="q_at"></span>
@@ -395,6 +417,15 @@
       <div class="box">
         <div class="h">按客户端 key<span class="line"></span><span id="k_n" class="dim"></span></div>
         <div class="b" style="padding:0 6px 6px"><div class="tblwrap"><table id="tbl_key"></table></div></div>
+      </div>
+    </div>
+
+    <!-- 按会话（session id） -->
+    <div id="sub-bysession" class="hidden">
+      <div class="box">
+        <div class="h">按会话<span class="line"></span><span id="s_n" class="dim"></span></div>
+        <div class="b" style="padding:0 6px 6px"><div class="tblwrap"><table id="tbl_session"></table></div></div>
+        <div class="hint" style="padding:0 10px 10px">会话 id ＝ 客户端发给上游的 <code>x-upstream-session</code>；点会话 id 可复制。空值与网关自动填的缺省 id（各 key 绑定的 session_id、供应商额外请求头里写死的会话 id）不纳入统计。该维度需要扫明细表，只在切到本页时计算。</div>
       </div>
     </div>
 
@@ -544,12 +575,12 @@
             </div></div>
           <div id="mm_status" class="hint"></div>
 
-          <div id="mm_panel" class="hidden" style="margin-top:10px">
+          <div id="mm_panel" class="hidden mmblk bulk">
+            <div class="mmtag"><b>① 批量添加（勾选清单）</b><span class="dim">勾完点这块底部的「添加所选」</span><span class="hint" id="mm_selinfo"></span></div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
               <button class="act" id="mm_all">全选</button>
               <button class="act" id="mm_none">清空</button>
               <input id="mm_search" placeholder="过滤…" style="max-width:200px">
-              <span class="hint" id="mm_selinfo"></span>
             </div>
             <div id="mm_list" style="max-height:300px;overflow:auto;border:1px solid var(--line);padding:6px"></div>
             <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
@@ -565,21 +596,23 @@
             </div>
           </div>
 
-          <div class="hint" style="margin:14px 0 8px;border-top:1px dotted var(--line2);padding-top:10px">手动单个添加</div>
-          <div class="field"><label>模型 ID（上游真实名字）</label><input id="mm_id" placeholder="upstream-model-id"></div>
-          <div class="field"><label>协议</label>
-            <select id="mm_fmt">
-              <option value="">自动探测（推荐）</option>
-              <option value="chat">chat（/chat/completions）</option>
-              <option value="responses">responses（/responses）</option>
-              <option value="messages">messages（Anthropic）</option>
-              <option value="gemini">gemini（Google 原生 generateContent）</option>
-            </select></div>
-          <div class="field"><label>推理档位（可选，逗号分隔；留空＝按探测结果/不干预）</label>
-            <input id="mm_efforts" placeholder="low, medium, high, max"></div>
-          <button class="act" id="mm_submit">添加 / 覆盖模型</button>
-          <div class="hint" style="margin-top:12px">协议留空＝自动探测：首次请求按 chat→responses→messages→gemini 依次试，成功即记住。<br>
-            模型已经在列表里也没关系——会用这里的配置覆盖它（协议留空＝清掉原有指定与探测结果，回到自动）。</div>
+          <div class="mmblk single">
+            <div class="mmtag"><b>② 手动单个添加（自己填模型 ID）</b><span class="dim">这里只认下面这个输入框，与上面的勾选无关</span></div>
+            <div class="field"><label>模型 ID（上游真实名字）</label><input id="mm_id" placeholder="upstream-model-id"></div>
+            <div class="field"><label>协议</label>
+              <select id="mm_fmt">
+                <option value="">自动探测（推荐）</option>
+                <option value="chat">chat（/chat/completions）</option>
+                <option value="responses">responses（/responses）</option>
+                <option value="messages">messages（Anthropic）</option>
+                <option value="gemini">gemini（Google 原生 generateContent）</option>
+              </select></div>
+            <div class="field"><label>推理档位（可选，逗号分隔；留空＝按探测结果/不干预）</label>
+              <input id="mm_efforts" placeholder="low, medium, high, max"></div>
+            <button class="act" id="mm_submit">添加 / 覆盖模型</button>
+            <div class="hint" style="margin-top:12px">协议留空＝自动探测：首次请求按 chat→responses→messages→gemini 依次试，成功即记住。<br>
+              模型已经在列表里也没关系——会用这里的配置覆盖它（协议留空＝清掉原有指定与探测结果，回到自动）。</div>
+          </div>
         </div>
       </div>
     </div>
@@ -609,16 +642,28 @@
               <select id="pl_strategy">
                 <option value="sticky">sticky —— 同一客户端固定同一家（保 prompt 缓存 / 思维链）</option>
                 <option value="quota">quota —— 按「剩余额度最多」选，各自周期免对齐（多订阅推荐）</option>
+                <option value="drain">drain —— 到期优先：先烧最快到期的，烧到见底再换下一只（同厂商多订阅）</option>
                 <option value="failover">failover —— 恒用第一家，挂了才换（主备）</option>
                 <option value="rr">rr —— 按权重轮询（不保缓存）</option>
                 <option value="least">least —— 挑进行中请求最少的那家</option>
               </select></div>
+            <div class="field"><label>负载均衡</label>
+              <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="pl_balance" style="width:auto" checked> 启用（关掉＝固定用第一个成员，只在它挂了/失败时才切换）</label></div>
             <div class="grid2">
               <div class="field"><label>冷却秒（失败后多久再试它）</label><input id="pl_cooldown" value="60"></div>
               <div class="field"><label>失败阈值（连续几次进冷却）</label><input id="pl_maxfails" value="2"></div>
             </div>
             <div class="field"><label>额度差阈值（仅 quota：当前这家比最优差几个百分点才换）</label>
               <input id="pl_margin" value="2" placeholder="2"></div>
+            <div class="field"><label>到期门槛（仅 drain：剩余额度低于此值就换下一只，单位 %）</label>
+              <div class="grid2">
+                <input id="pl_dm" value="3" placeholder="月度 3">
+                <input id="pl_dw" value="5" placeholder="周 5">
+              </div>
+              <div class="grid2" style="margin-top:6px">
+                <input id="pl_dr" value="5" placeholder="滚动 5">
+                <div class="dim" style="font-size:0.85em;align-self:center">月/周/滚动，三档都留余量</div>
+              </div></div>
             <div class="field"><label>全挂时的提示模板（可选；{n}=成员数、{detail}=成员(状态)列表）</label>
               <input id="pl_msg" placeholder="三家订阅都不可用（{detail}），请稍后重试"></div>
             <div class="field"><label>允许普通用户加入（他们可以把自己的上游加进来，共享本组额度）</label>
@@ -1012,13 +1057,14 @@ function applyRole() {
 let SUB = localStorage.getItem('gw_sub') || 'overview';
 function syncSub() {
   document.querySelectorAll('#subnav button[data-sub]').forEach(x => x.classList.toggle('on', x.dataset.sub === SUB));
-  ['overview', 'bymodel', 'byprovider', 'bykey', 'pair', 'recent'].forEach(s => $('sub-' + s).classList.toggle('hidden', s !== SUB));
+  ['overview', 'bymodel', 'byprovider', 'bykey', 'bysession', 'pair', 'recent'].forEach(s => $('sub-' + s).classList.toggle('hidden', s !== SUB));
   $('subnav').classList.toggle('hidden', TAB !== 'stats');
   $('rangebar').classList.toggle('hidden', SUB === 'recent');
 }
 document.querySelectorAll('#subnav button[data-sub]').forEach(b => b.onclick = () => {
   SUB = b.dataset.sub; localStorage.setItem('gw_sub', SUB); syncSub();
   if (SUB === 'recent') loadRequests();
+  else if (SUB === 'bysession') refreshStats();      // 该维度按需拉取（扫明细表），切进来立刻补一次，不等 2s 轮询
 });
 document.querySelectorAll('.nav button[data-tab]').forEach(b => b.onclick = () => {
   if (!ADMIN() && b.classList.contains('adminonly')) return;
@@ -1129,6 +1175,7 @@ function rangeQuery() {
   if (RANGE_UNIT[RANGE]) p.push('unit=' + RANGE_UNIT[RANGE]);      // 指定按小时/按日期分桶
   p.push('dim=key');                                               // 柱状图按客户端 key 分色
   p.push('mode=' + DATA_MODE);                                     // pool＝走上游组 / direct＝网关直接转发
+  if (SUB === 'bysession') p.push('sessions=1');                   // 「按会话」子页才要这个维度（要扫明细表，别每页都算）
   return p.join('&');
 }
 function rangeInfoText(d) {
@@ -1165,11 +1212,65 @@ $('rng_apply').onclick = () => {
   syncRange(); refreshStats();
 };
 
+/* ---------- 官方总量（柱状图叠加线，仅 5h/本周/本月） ---------- */
+// 数据来自 /api/official/usage（网关转调上游控制台的用量接口）。官方是账号全量口径
+// （含不经本网关的直连流量），与本地统计不是同一批数据 —— 所以曲线用「独立刻度」，只在线下图例给合计与峰值，
+// 避免与柱子的纵轴读数混淆。
+let OFFICIAL = null, OFFICIAL_KEY = '', OFFICIAL_AT = 0;
+const OFFICIAL_RANGES = ['5h', 'week', 'month'];
+async function refreshOfficial() {
+  if (!OFFICIAL_RANGES.includes(RANGE)) { OFFICIAL = null; return; }
+  const tz = -new Date().getTimezoneOffset();
+  const key = RANGE + '|' + tz;
+  if (OFFICIAL && OFFICIAL_KEY === key && Date.now() - OFFICIAL_AT < 30000) return;   // 30s 节流（服务端另有 30s 缓存）
+  try { OFFICIAL = await api(`/api/official/usage?range=${RANGE}&tz=${tz}`); }
+  catch (e) { OFFICIAL = { ok: false, error: e.message }; }
+  OFFICIAL_KEY = key; OFFICIAL_AT = Date.now();
+}
+function renderOfficial(ser, isDay) {
+  const svg = $('ovline'), lg = $('ovlegend');
+  if (!svg || !lg) return;
+  svg.innerHTML = '';
+  const head = '<span class="lg"><i style="background:var(--cyan);width:14px;height:2px"></i>官方总量';
+  if (!OFFICIAL_RANGES.includes(RANGE)) { lg.innerHTML = `${head}<span class="dim">：只在「最近 5 小时 / 本周 / 本月」口径显示</span></span>`; return; }
+  if (!OFFICIAL) { lg.innerHTML = `${head}<span class="dim">：读取中…</span></span>`; return; }
+  if (!OFFICIAL.ok) { lg.innerHTML = `${head}<span class="dim">：${esc(OFFICIAL.error || '读取失败')}</span></span>`; return; }
+  const pts = OFFICIAL.points || [];
+  if (!ser || !ser.length || !pts.length) { lg.innerHTML = `${head}<span class="dim">：该窗口官方无数据</span></span>`; return; }
+  const step = ser[1] ? ser[1].ts - ser[0].ts : 3600e3;
+  const tzMs = -new Date().getTimezoneOffset() * 60000;
+  const bucketOf = (ts) => Math.floor((ts + tzMs) / step) * step - tzMs;      // 与柱子的桶对齐（含多天合并）
+  const m = new Map();
+  for (const p of pts) { const bk = bucketOf(p.ts); m.set(bk, (m.get(bk) || 0) + (p.tokens || 0)); }
+  const inWin = (ts) => ts + step > OFFICIAL.since && ts <= OFFICIAL.until;   // 窗口内没有记录＝官方 0 用量；窗口外＝断线
+  const vals = ser.map(b => inWin(b.ts) ? (m.get(b.ts) || 0) : null);
+  const maxV = Math.max(1, ...vals.filter(v => v != null));
+  const n = ser.length;
+  const xy = vals.map((v, i) => v == null ? null : [(i + 0.5) / n * 100, 100 - Math.min(100, v / maxV * 100)]);
+  const segs = []; let cur = [];
+  for (const p of xy) { if (p) cur.push(p); else { if (cur.length) segs.push(cur); cur = []; } }
+  if (cur.length) segs.push(cur);
+  svg.innerHTML = segs.map(s => s.length > 1
+    ? `<polyline points="${s.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ')}"></polyline>`
+    : `<circle cx="${s[0][0].toFixed(2)}" cy="${s[0][1].toFixed(2)}" r="0.9"></circle>`).join('');
+  const total = vals.reduce((a, v) => a + (v || 0), 0);
+  const meta = OFFICIAL.meta || {};
+  lg.innerHTML = `${head}<span class="dim">：合计 ${fmt(total)} tokens · 峰值 ${fmt(maxV)}/${isDay ? '天' : 'h'}`
+    + ` · ${meta.raw_bucket === 'hour' ? '官方小时数据' : '官方数据'}（独立刻度）`
+    + (meta.segments > 1 ? ` · 跨 ${meta.segments} 个自然月拼接` : '') + '</span></span>';
+}
+
 /* ---------- 用量统计 ---------- */
 async function refreshStats() {
   if (!ME || TAB !== 'stats') return;
-  try { STATS = await api('/api/stats?' + rangeQuery()); }
-  catch (e) { $('status').textContent = e.message; $('dot').className = 'dot bad'; return; }
+  let got;
+  try {
+    [got] = await Promise.all([
+      api('/api/stats?' + rangeQuery()),
+      refreshOfficial(),               // 官方总量：只在 5h/本周/本月拉，内部吞错，不拖累主流程
+    ]);
+  } catch (e) { $('status').textContent = e.message; $('dot').className = 'dot bad'; return; }
+  STATS = got;
   const d = STATS;
   $('dot').className = 'dot ok';
   if (d.config && typeof d.config.enabled === 'boolean') { ENABLED = d.config.enabled; renderToggle(); }
@@ -1261,6 +1362,7 @@ async function refreshStats() {
   const astep = Math.max(1, Math.ceil(ser.length / 6));
   $('axis').innerHTML = ser.filter((_, i) => i % astep === 0).map(x => `<span>${labAxis(x.ts)}</span>`).join('') || '<span>暂无数据</span>';
   $('h24s').textContent = `峰值 ${fmt(max)} tokens/${isDay ? '天' : 'h'}`;
+  renderOfficial(ser, isDay);          // 官方总量叠加线（只有 5h/本周/本月有数据）
 
   const H9 = ['请求', '输入', '输出', 'tok/s', '字节(↑/↓)', '缓存', '命中', 'TTFT', '总时长', '推理'];   // 第 0 列是名称，各表不同
   const head = (name) => [name, ...H9];
@@ -1299,7 +1401,61 @@ async function refreshStats() {
   }
   $('pair_n').textContent = `${Object.keys(pairMap).length} 个 key · ${pRows.length} 条 key×模型 组合`;
   table($('tbl_pair'), ['key', '模型', '请求', '占该 key', '输入', '输出', '命中'], pRows, '该口径/区间没有请求', pVals, [0, 1], 22);
+  renderSessions(d);                                                 // 按会话（仅在该子页请求了 sessions 维度时才有数据）
   if (SUB === 'recent' && !reqFilterActive() && REQ_PAGE === 1) loadRequests();   // 无筛选且在第 1 页时跟随自动刷新
+}
+
+/* ---------- 按会话（session id） ---------- */
+// 数据来自 /api/stats?sessions=1 的 by_session；空会话 id 与网关自动填的缺省 id（key 的 session_id、供应商固定头）
+// 已在服务端排除，所以这里只渲染真实会话。
+function sidCell(sid) {
+  const short = sid.length > 12 ? sid.slice(0, 12) + '…' : sid;
+  return `<span class="sidcopy" data-sid="${esc(sid)}" title="${esc(sid)}（点击复制）">${esc(short)}</span>`;
+}
+function renderSessions(d) {
+  const el = $('tbl_session');
+  if (!el) return;
+  const o = d.by_session;
+  if (!o) {                       // 服务端还是旧版本：别让表格停在上一轮数据上
+    el._T = null;
+    el.innerHTML = '<tbody><tr><td class="msg">服务端还是旧版本（不支持 sessions 维度），重启网关后可用</td></tr></tbody>';
+    $('s_n').textContent = '';
+    return;
+  }
+  const m = d.session_meta || {};
+  const H9 = ['请求', '输入', '输出', 'tok/s', '字节(↑/↓)', '缓存', '命中', 'TTFT', '总时长', '推理'];
+  const rows = [], vals = [];
+  for (const [sid, v] of Object.entries(o)) {
+    const keys = v.keys || [], models = v.models || [];
+    const mTxt = models.length
+      ? models.slice(0, 2).map(esc).join('、') + (models.length > 2 ? ` <span class="dim">+${models.length - 2}</span>` : '')
+      : '—';
+    rows.push([sidCell(sid), keys.length ? keys.map(esc).join('、') : '—', mTxt, v.last ? fmtDT(v.last) : '—',
+      fmt(v.requests), fmt(v.in), fmt(v.out), tpsTxt(v.tps), `${fmtB(v.bytes_in)} / ${fmtB(v.bytes_out)}`,
+      fmt(v.cached), hitCell(v), ms(v.avg_ttft), ms(v.avg_ms), fmt(v.reasoning)]);
+    vals.push([sid, keys.length, models.length, v.last || 0, v.requests || 0, v.in || 0, v.out || 0, v.tps || 0,
+      (v.bytes_in || 0) + (v.bytes_out || 0), v.cached || 0, v.in ? v.cached / v.in : 0, v.avg_ttft || 0, v.avg_ms || 0, v.reasoning || 0]);
+  }
+  $('s_n').innerHTML = `${Object.keys(o).length} 个会话 · ${fmt(m.requests || 0)} 次请求`
+    + `<span class="dim"> · 已排除 ${m.default_ids || 0} 个缺省会话 id 与空值</span>`;
+  table(el, ['会话', 'key', '模型', '最近活动', ...H9], rows,
+    '当前口径/区间内没有带会话 id 的请求（空值与缺省 id 不纳入统计）', vals, [2], 24);
+  el.querySelectorAll('[data-sid]').forEach(x => x.onclick = () => copySid(x.dataset.sid));
+}
+async function copySid(sid) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(sid); toast('已复制会话 id'); return; }
+    throw new Error('no clipboard');
+  } catch {
+    try {   // 回退：非 https / 无剪贴板权限时用临时 textarea
+      const ta = document.createElement('textarea');
+      ta.value = sid; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      toast(ok ? '已复制会话 id' : '复制失败，请手动选择复制', !ok);
+    } catch { toast('复制失败，请手动选择复制', 1); }
+  }
 }
 
 /* ---------- key × 模型 分布 ---------- */
@@ -1382,7 +1538,10 @@ function renderReqRows(items) {
   table($('tbl_recent'), REQ_HEAD, items.map(r => {
     const ip = inProto(r), op = r.format;
     return [
-      new Date(r.ts).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      `<span class="tcell" title="${esc(new Date(r.ts).toLocaleString('zh-CN', { hour12: false }))}">` +
+      `<span>${new Date(r.ts).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>` +
+      (r.osid ? `<span class="p osid" title="上游会话 id：${esc(r.osid)}">${esc(r.osid)}</span>` : '') +
+      `</span>`,
       `<span class="dim">${esc(r.ip || '-')}</span>`, esc(r.key),
       esc(r.model) + ((r.model && r.upstream_model && !String(r.model).endsWith('/' + r.upstream_model))   // 上游名通常＝模型名去掉前缀，只有真别名时才附上
         ? ` <span class="dim">→ ${esc(r.upstream_model)}</span>` : ''),
@@ -1734,7 +1893,7 @@ async function renderPoolsAdmin() {
     ['组名', '策略', '成员', '额度（剩）', '冷却 / 阈值', '模型入口', '健康', '操作'],
     pools.map(p => [
       `<b>${esc(p.name)}</b>${p.user_join ? ' <span class="pill" title="允许普通用户把自己的上游加进来">开放加入</span>' : ''}`,
-      `<span class="cyan">${esc(p.strategy || 'sticky')}</span>${p.strategy === 'quota' ? `<span class="dim"> 差&gt;${p.quota_margin == null ? 2 : p.quota_margin}pt</span>` : ''}`,
+      `${p.balance === false ? '<span class="pill" title="不参与均衡：固定用第一个成员，只有它失败/冷却才切换">均衡关</span> ' : ''}<span class="cyan">${esc(p.strategy || 'sticky')}</span>${p.strategy === 'quota' ? `<span class="dim"> 差&gt;${p.quota_margin == null ? 2 : p.quota_margin}pt</span>` : ''}${p.strategy === 'drain' ? `<span class="dim"> 月&lt;${p.drain_min_monthly == null ? 3 : p.drain_min_monthly}% 周&lt;${p.drain_min_weekly == null ? 5 : p.drain_min_weekly}%</span>` : ''}`,
       memberChips(p),
       quotaCell(p),
       `${p.cooldown_sec || 60}s / ${p.max_fails || 2} 次`,
@@ -1858,6 +2017,8 @@ function resetPoolForm() {
   $('pl_name').value = ''; $('pl_name').disabled = false;
   $('pl_strategy').value = 'sticky';
   $('pl_cooldown').value = '60'; $('pl_maxfails').value = '2'; $('pl_margin').value = '2'; $('pl_msg').value = '';
+  $('pl_dm').value = '3'; $('pl_dw').value = '5'; $('pl_dr').value = '5';
+  $('pl_balance').checked = true;
   $('pl_userjoin').checked = false;
   $('pl_members').innerHTML = '';
   addMemberRow(null);
@@ -1875,6 +2036,10 @@ function startEditPool(name) {
   $('pl_cooldown').value = p.cooldown_sec || 60;
   $('pl_maxfails').value = p.max_fails || 2;
   $('pl_margin').value = (p.quota_margin == null ? 2 : p.quota_margin);
+  $('pl_dm').value = (p.drain_min_monthly == null ? 3 : p.drain_min_monthly);
+  $('pl_dw').value = (p.drain_min_weekly == null ? 5 : p.drain_min_weekly);
+  $('pl_dr').value = (p.drain_min_rolling == null ? 5 : p.drain_min_rolling);
+  $('pl_balance').checked = p.balance !== false;
   $('pl_msg').value = p.fail_message || '';
   $('pl_userjoin').checked = !!p.user_join;
   $('pl_members').innerHTML = '';
@@ -1910,9 +2075,13 @@ $('pl_submit').onclick = async () => {
   if (!name) return toast('组名不能为空', 1);
   const body = {
     name, strategy: $('pl_strategy').value,
+    balance: $('pl_balance').checked,
     cooldown_sec: Number($('pl_cooldown').value) || 60,
     max_fails: Number($('pl_maxfails').value) || 2,
     quota_margin: $('pl_margin').value.trim() === '' ? undefined : Number($('pl_margin').value),
+    drain_min_monthly: $('pl_dm').value.trim() === '' ? undefined : Number($('pl_dm').value),
+    drain_min_weekly: $('pl_dw').value.trim() === '' ? undefined : Number($('pl_dw').value),
+    drain_min_rolling: $('pl_dr').value.trim() === '' ? undefined : Number($('pl_dr').value),
     fail_message: $('pl_msg').value.trim(),
     user_join: $('pl_userjoin').checked,
     members,
@@ -2096,7 +2265,10 @@ const fmtName = (f) => (!f || f === 'auto') ? '自动探测' : f;
 $('mm_submit').onclick = async () => {
   const id = $('mm_id').value.trim();
   const prefix = mmPrefix();
-  if (!id) return toast('先填模型 ID', 1);
+  if (!id) {
+    const n = $('mm_panel').classList.contains('hidden') ? 0 : selIds().length;
+    return toast(n ? `已勾选 ${n} 个模型——批量加请点上面「① 批量添加」里的「添加所选」` : '先在下面「模型 ID」框里填模型名', 1);
+  }
   if (!prefix) return toast('先选一个有前缀的供应商', 1);
   try {
     const r = await api('/api/config/model', { prefix, id, format: $('mm_fmt').value, efforts: $('mm_efforts').value.trim() });
