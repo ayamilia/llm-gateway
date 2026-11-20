@@ -22,6 +22,7 @@
     "upstream-a": {
       "base_url": "https://api.upstream-a.example.com/v1",
       "api_key_env": "UPSTREAM_A_KEY",
+      "format": "",
       "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       "extra_headers": {},
       "thinking_style": "none",
@@ -141,7 +142,8 @@
     "timeout_ms": 25000,
     "expose_tools_api": true,
     "providers": [],
-    "models": []
+    "models": [],
+    "mode": "off"
   },
   "tool_name_guard": {
     "enabled": false,

@@ -2,6 +2,42 @@
 
 本项目的取法是「自用的最小化网关」：功能都从实际跑起来的线上需求长出来，**新增能力一律默认关闭**，旧 `config.json` 不需要迁移，不配就等于没有这块。下面按能力归类，不按提交顺序。
 
+## 0.3.0 — 2026-11-20
+
+### 修复：协议互转时图片被静默丢弃
+
+四个互转函数（`chatToMessages`、`chatToResponses`、`messagesToChatReq`、`responsesToChatReq`）以前都把 content 压成 `textOf()`，图片块变成空字符串——**HTTP 200、日志无异常，但模型说没看见图**。现在统一走一组转换器（`imagePartOf` / `chatImagePart` / `messagesImagePart` / `responsesImagePart` / `imagesIn`）：
+
+- 四个方向都保留图片；`data:` URL 自动拆成 base64（Anthropic 的 `source.type:"url"` 不认 data URL，实测会被拒）。
+- **没有图片时仍输出纯字符串**，请求体与旧版逐字一致（prompt 前缀/缓存不受影响）。
+- 同协议直通本来就逐字节转发，不涉及。
+
+### 修复：Gemini 上游的两个硬约束
+
+- **工具声明**：`functionDeclarations.parameters` 只吃 OpenAPI 子集，多一个 `additionalProperties` 就整条 400（`Invalid JSON payload received. Unknown name "additionalProperties"`）。新增 `geminiSchema()` 递归白名单清洗：丢 `additionalProperties`/`$schema`/`$ref`/`format`/`default`/`exclusiveMinimum`，`oneOf`+`allOf` → `anyOf`，`const` → `enum`，`required` 去掉未声明字段。Hermes/Pi 这类客户端的工具 schema 普遍带 `additionalProperties: false`，不洗的话带工具的请求全废。
+- **轮次**：对话必须以 user 轮结尾且同角色不连续。带 assistant 预填充（prefill）的请求会被拒（`Requests ending with a model turn are not supported.`）——现在相邻同角色先合并 parts，末尾若是 model 就追加一轮 user（文本可配 `config.gemini_continue`，缺省「继续」）。
+
+### 新增：供应商级默认协议（`providers.*.format`）
+
+同一家上游的模型多半只认同一种协议，逐模型配 `model_formats` 太啰嗦。供应商可设 `chat` / `responses` / `messages` / `gemini`，留空＝自动探测。解析顺序：路由显式 > 模型显式 > 供应商显式 > 探测记忆 > 正则推断 > chat（**显式配置统一排在探测记忆前面**）。改/清该值时会顺手删掉这家供应商的探测记忆，避免旧值顶回来。面板有下拉与「协议」列。
+
+### 变更：搜索代理默认不介入（`web_search.mode`）
+
+以前 `enabled: true` 就对**所有上游**注入 `web_search` 工具，模型一搜即由网关代打搜索 REST——客户端从没要过搜索也会产生费用。现在默认 `off`（`enabled: true` 但没写 `mode` 也按 off），另有两档：`declared`（客户端自己声明同名工具才接管）、`inject`（旧行为，需显式配置，建议用 `providers`/`models` 收窄）。
+
+### 性能：额度快照不再阻塞首屏
+
+`/api/upstream/quota` 原来是「缓存过期就同步重算」，一次要串行等上游再聚合，首屏白等 1 秒以上。现在：
+
+- **stale-while-revalidate**：过期时立刻返回旧快照，后台刷新。
+- 两条独立上游调用并行；并发请求用单飞（in-flight）去重，不会各跑一份。
+- 快照落盘 `state/quota-cache.json`，重启后先拿它垫首屏；启动时预热一次。
+- 重算会打一行 `[quota] 重算 <ms>（上游 x · 本地 y · 每模型 z）`，便于定位。
+
+实测：热缓存 5–11ms、过期后首屏 12ms、冷启动（无磁盘快照）530ms。
+
+> 说明：线上部署里的「按某家模型目录自动取单价/限额」「按某家控制台拉每模型用量」依赖特定厂商接口，**未纳入开源版**；单价与月限额仍由 `config.prices` / `peak_prices` 提供。
+
 ## 0.2.0 — 2026-11-18
 
 ### 新增：联网搜索代理（`web_search`）

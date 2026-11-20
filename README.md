@@ -52,7 +52,7 @@
 |---|---|
 | 做什么 | 上游协议 ≠ 客户端协议时走 `客户端协议 → chat → 上游协议`，响应再翻回来。请求侧 `responsesToChatReq` / `messagesToChatReq`；响应侧按客户端协议渲染 Responses / Anthropic 事件流（`responsesSink` / `messagesSink`） |
 | 同协议 | **不受影响**，仍走原生直通（逐字节回吐，保真度最高） |
-| 保真度代价 | ① Responses 的加密 reasoning item 在 chat 中枢里装不下 → 丢；② Anthropic 流式的 `message_start.usage.input_tokens` 只能给 0（真值补在 `message_delta`）；③ 图片块被忽略 |
+| 保真度代价 | ① Responses 的加密 reasoning item 在 chat 中枢里装不下 → 丢；② Anthropic 流式的 `message_start.usage.input_tokens` 只能给 0（真值补在 `message_delta`）。**图片块四个方向都会保留**（chat `image_url` / messages `image` / responses `input_image` 互转，data URL 自动拆成 base64）；无图时请求体与旧版逐字一致 |
 | 模型可见性 | `/v1/models` 默认仍按客户端协议过滤；置 `config.json` 的 `model_filter_protocol: false` 可放开成全量 |
 | 排查 | 互转请求打 `CONVERT <客户端协议> -> <上游协议>`；统计表新增 `cproto` 字段（客户端协议） |
 | 回归 | `scripts/interop_test/run.sh` —— 起假上游 + 第二个网关实例，跑 3 客户端 × 3 上游 × 流式/非流式 + 多轮工具回传 |
@@ -106,6 +106,7 @@
 ```json
 "web_search": {
   "enabled": true,
+  "mode": "declared",                          // off（默认）/ declared / inject，见下
   "base_url": "https://api.example.com/v1",   // 搜索 REST 挂在它下面的 /tools/search、/tools/fetch
   "api_key_env": "SEARCH_API_KEY",
   "tool_name": "web_search",
@@ -113,10 +114,20 @@
   "need_content": false, // 是否同时抓正文（更慢、更占上下文）
   "max_rounds": 2,       // 续跑轮数（不是搜索次数）
   "max_calls": 6,        // 单请求搜索次数硬上限
-  "providers": [],       // 留空＝对所有上游注入
+  "providers": [],       // 留空＝对所有上游注入（**别留空**，见 mode）
   "models": []           // 留空＝对所有模型注入
 }
 ```
+
+**`mode` 决定网关介不介入**（2026-11 起默认 `off`）：
+
+| 值 | 行为 |
+|---|---|
+| `off`（默认） | 不注入、不拦截、不改道。`enabled: true` 但没写 `mode` 也按 off——避免「客户端没要搜索却产生搜索计费」 |
+| `declared` | 只有客户端自己在 `tools` 里声明了同名 `function` 工具才接管执行（日志 `WS TAKEOVER`）；没声明就不介入 |
+| `inject` | 主动向所有（或 `providers`/`models` 限定的）上游注入 `web_search` 工具，旧行为。要用就**配 `providers`/`models` 收窄** |
+
+> 计费提醒：`inject` 模式下模型随时可能调用，网关会代它打搜索 REST。上游按次计费的话，这就是一笔你没预料到的支出。
 
 | 项 | 说明 |
 |---|---|
@@ -156,6 +167,25 @@
 ```
 
 四个拼接点（chat / responses / messages / gemini）、原生直通、档位探测全部走同一个 `upstreamBase(provider, format)`；不配就是原来的行为。
+
+## 供应商级默认协议（`providers.*.format`）
+
+同一家上游的模型通常只认同一种协议（例如中转站只给 Claude 开 Anthropic `/messages`），逐模型填 `model_formats` 太啰嗦。供应商也能定一档默认：
+
+```json
+"providers": { "upstream-a": {
+  "base_url": "https://api.example.com/v1",
+  "api_key_env": "UPSTREAM_A_KEY",
+  "format": "messages"          // chat / responses / messages / gemini；留空＝自动探测
+} }
+```
+
+解析顺序：**路由显式 > 模型显式（`model_formats`）> 供应商显式（`format`）> 探测记忆 > `responses_regex` 推断 > chat**。显式配置统一排在探测记忆前面，手填了就听你的。
+
+- 改/清这个值时网关会**一并删掉该供应商的探测记忆**（`stats/format_overrides.json` 里 `供应商|*` 的条目）——否则旧记忆会把新值顶回去，表现就是「改完不生效」。
+- 面板「增加供应商」里有「上游协议」下拉，供应商表多一列「协议」（未设显示 `自动`）。
+- 接口：`POST /api/config/provider`（新建可带 `format`）、`/api/config/provider/update`（`format: ""` ＝ 清除）、`/api/config/provider/detail` 回显；非法值直接 400。
+- 改了立刻生效，不用重启。
 
 ## 跑起来
 

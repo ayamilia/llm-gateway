@@ -1377,12 +1377,29 @@ let FORMAT_OVERRIDES = {};
 try { FORMAT_OVERRIDES = JSON.parse(fs.readFileSync(OVERRIDES_FILE, 'utf8')); } catch { }
 function saveOverrides() { try { fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(FORMAT_OVERRIDES, null, 1)); } catch (e) { log('override save fail', e.message); } }
 const otherFormat = (f) => (f === 'responses' ? 'chat' : 'responses');
+// 供应商级默认上游协议（2026-11-20 加）：同一家上游的模型多半只认同一种协议，逐模型填太啰嗦。
+// 优先级：路由显式 > 模型显式(model_formats) > 供应商显式(provider.format) > 探测记忆 > 正则推断 > chat。
+// 注意这里是「显式配置压过探测记忆」——用户手填了就照他填的，探测只在没配时补空。
+const PROVIDER_FORMATS = new Set(['chat', 'responses', 'messages', 'gemini']);
+function normProviderFormat(v) {
+    const f = String(v == null ? '' : v).trim().toLowerCase();
+    if (!f || f === 'auto') return '';
+    if (!PROVIDER_FORMATS.has(f)) throw new Error('协议只能是 chat / responses / messages / gemini（留空＝自动探测）');
+    return f;
+}
+function providerFormatOf(name) {
+    const p = name ? (CFG.providers || {})[name] : null;
+    const f = p && p.format;
+    return (typeof f === 'string' && PROVIDER_FORMATS.has(f)) ? f : '';
+}
 function resolveFormat(rt) {
-    if (rt.format && rt.format !== 'auto') return rt.format;
+    if (rt.format && rt.format !== 'auto') return rt.format;          // 路由显式
     const key = rt.provider + '|' + rt.upstream_model;
-    if (FORMAT_OVERRIDES[key]) return FORMAT_OVERRIDES[key];
     const seeded = (CFG.model_formats || {})[key];
-    if (seeded) return seeded;
+    if (seeded) return seeded;                                         // 模型显式
+    const pf = providerFormatOf(rt.provider);
+    if (pf) return pf;                                                 // 供应商默认
+    if (FORMAT_OVERRIDES[key]) return FORMAT_OVERRIDES[key];           // 探测记忆
     if (rt.responses_regex && new RegExp(rt.responses_regex).test(rt.upstream_model)) return 'responses';
     return 'chat';
 }
@@ -1610,6 +1627,15 @@ function stripBodyFields(payload, list, label) {
 // 再续跑一轮，客户端只看到最终答案（不需要支持任何服务端工具协议）。
 // 默认关闭：CFG.web_search 不存在或缺 enabled 时，所有路径行为与改动前逐字一致。
 function wsCfg() { return CFG.web_search || {}; }
+// 介入模式（2026-11-20 加）：off（默认，完全不介入）/ declared（客户端自己声明了同名工具才接管）/
+// inject（主动注入工具，旧行为）。以前 enabled:true 就直接对**所有上游**注入，模型一搜就打到上游的
+// tools/search（有的上游按次计费），客户端根本没要过搜索也会产生费用——所以默认改成 off。
+function wsMode() {
+    const w = wsCfg();
+    const raw = String(w.mode || '').toLowerCase();
+    if (raw === 'inject' || raw === 'declared' || raw === 'off') return raw;
+    return w.inject === true ? 'inject' : 'off';       // 只认显式 inject:true，缺省一律不介入
+}
 function wsApiKey(w) { return process.env[w.api_key_env || 'SEARCH_API_KEY'] || ''; }
 function wsEnabledFor(rt) {
     const w = wsCfg();
@@ -1623,15 +1649,24 @@ function wsEnabledFor(rt) {
     return true;
 }
 function wsPlan(auth, rt, chatBody) {
+    const mode = wsMode();
+    if (mode === 'off') return null;                    // 默认：不注入、不拦截、不改道
     if (!wsEnabledFor(rt)) return null;
     const w = wsCfg();
     if (w.max_rounds != null && +w.max_rounds <= 0) return null;   // 0 = 不注入（否则会吞掉调用却不续跑）
     // 客户端自己带了**服务端工具**（type != function，如某上游的 xxx_web_search）→ 不注入、也不改道：
-    // 那种请求必须保持原样直通，否则服务端工具块会在 pumpChat 里被当噪音丢掉。
+    // 那种请求必须保持原样直通，否则服务端工具块会在 pumpChat 里当噪音丢掉。
     if (Array.isArray(chatBody?.tools) && chatBody.tools.some((t) => t && t.type && t.type !== 'function')) return null;
     const name = w.tool_name || 'web_search';
+    // declared 模式：客户端**必须自己声明**同名 function 工具，网关才接管执行；没声明就完全不介入
+    if (mode !== 'inject') {
+        const declared = Array.isArray(chatBody?.tools)
+            && chatBody.tools.some((t) => t && t.type === 'function' && t.function && t.function.name === name);
+        if (!declared) return null;
+        log(`WS TAKEOVER ${name}（客户端已声明同名工具，改由网关执行）`);
+    }
     return {
-        name, names: new Set([name]), cfg: w, calls: [], usage: {},
+        name, names: new Set([name]), cfg: w, calls: [], usage: {}, mode,
         maxRounds: w.max_rounds == null ? 3 : +w.max_rounds,
         maxCalls: w.max_calls == null ? 6 : +w.max_calls,
     };
@@ -1781,7 +1816,7 @@ function upstreamBase(p, format) {
 
 function buildUpstream(rt, format, body, sessionId, ctx, ua, clientSid) {
     body = clampBodyEffort(body, rt);
-    if (ctx && ctx.ws) injectWsTool(body, ctx.ws);   // web_search 代理：按 chat 形状注入，四种上游协议各自翻译              // 客户端给了不支持的档位 → 就近降级（没配置过＝不动）
+    if (ctx && ctx.ws && ctx.ws.mode === 'inject') injectWsTool(body, ctx.ws);   // 只有 inject 模式才主动加工具
     const headers = upstreamHeaders(rt.providerCfg, sessionId, body.stream ? 'text/event-stream' : 'application/json', format, ua, clientSid);
     if (format === 'responses') {
         let reasonInj = 0;
@@ -1914,6 +1949,42 @@ function injectReasonsIntoInput(input, provider) {   // 直通路：客户端没
 
 // ---------------- chat -> responses 请求翻译 ----------------
 const textOf = (c) => typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => p?.text ?? '').join('') : (c == null ? '' : jdump(c));
+
+// ---- 图片块互转（chat image_url / messages image / responses input_image）----
+// 统一中间形态：{ url } 远程图，或 { mime, data } base64。
+// 四个互转函数必须都走这一组：以前它们直接 textOf()，图片被压成空文本静默丢掉
+// （现象：messages 客户端/上游一加图就「模型看不见图」，而 HTTP 200、日志无异常）。
+function imagePartOf(p) {
+    if (!p || typeof p !== 'object') return null;
+    const fromUrl = (u) => {
+        if (typeof u !== 'string' || !u) return null;
+        const m = /^data:([^;,]+);base64,(.*)$/s.exec(u);      // data URL 必须拆成 base64，Anthropic 的 url source 不认它
+        return m ? { mime: m[1], data: m[2] } : { url: u };
+    };
+    if (p.type === 'image_url' || p.type === 'input_image') {
+        return fromUrl(typeof p.image_url === 'string' ? p.image_url : (p.image_url && p.image_url.url));
+    }
+    if (p.type === 'image') {                                  // Anthropic
+        const s = p.source || {};
+        if (typeof s.data === 'string' && s.data) return { mime: s.media_type || 'image/png', data: s.data };
+        if (typeof s.url === 'string' && s.url) return { url: s.url };
+    }
+    return null;
+}
+function imageUrlOf(im) { return im.data ? `data:${im.mime || 'image/png'};base64,${im.data}` : im.url; }
+function chatImagePart(im) { return { type: 'image_url', image_url: { url: imageUrlOf(im) } }; }
+function messagesImagePart(im) {
+    return im.data
+        ? { type: 'image', source: { type: 'base64', media_type: im.mime || 'image/png', data: im.data } }
+        : { type: 'image', source: { type: 'url', url: im.url } };
+}
+function responsesImagePart(im) { return { type: 'input_image', image_url: imageUrlOf(im) }; }
+function imagesIn(content) {                                   // content（数组/单块）→ 图片列表
+    const arr = Array.isArray(content) ? content : (content && typeof content === 'object' ? [content] : []);
+    const out = [];
+    for (const p of arr) { const im = imagePartOf(p); if (im) out.push(im); }
+    return out;
+}
 function chatToResponses(body, opts) {
     const echoReason = !!(opts && opts.echoReason);   // 把上一轮归档的 reasoning item 插回对应 function_call 之前
     const onInject = opts && opts.onInject;           // 回报本次注入了多少条（用于统计/诊断缓存变化）
@@ -1943,7 +2014,14 @@ function chatToResponses(body, opts) {
             }
             continue;
         }
-        input.push({ role: m.role, content: textOf(m.content) });
+        const imgs = imagesIn(m.content);
+        if (imgs.length) {                                    // 有图 → Responses 的 message content 必须是块数组
+            const parts = [];
+            const t = textOf(m.content);
+            if (t) parts.push({ type: 'input_text', text: t });
+            for (const im of imgs) parts.push(responsesImagePart(im));
+            input.push({ role: m.role, content: parts });
+        } else input.push({ role: m.role, content: textOf(m.content) });
     }
     const out = { model: body.model, input, stream: !!body.stream };
     if (instr) out.instructions = instr;
@@ -2139,7 +2217,15 @@ function chatToMessages(body, model, providerCfg) {
             out.push({ role: 'assistant', content: parts });
             continue;
         }
-        out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: textOf(m.content) });
+        const role = m.role === 'assistant' ? 'assistant' : 'user';
+        const imgs = imagesIn(m.content);
+        if (imgs.length) {                                    // chat 的 image_url → Anthropic image 块
+            const parts = [];
+            const t = textOf(m.content);
+            if (t) parts.push({ type: 'text', text: t });
+            for (const im of imgs) parts.push(messagesImagePart(im));
+            out.push({ role, content: parts });
+        } else out.push({ role, content: textOf(m.content) });
     }
     const payload = {
         model,
@@ -2190,6 +2276,41 @@ function chatToMessages(body, model, providerCfg) {
 // 客户端那侧仍是 chat（网关的 chat 中枢），所以 responses/messages 客户端也能间接受益，不需要额外实现。
 const GEMINI_THINKING_LEVELS = ['low', 'medium', 'high'];   // 实测：minimal/xhigh 直接 400，thinkingBudget 也不支持
 // 阶梯就近降级：gemini 只有三档，低了往上报、高了往下压（只降不升是上游侧原则，但 minimal 必须抬到 low 才不 400）
+// Gemini 的 functionDeclarations.parameters 只吃 OpenAPI 子集：多一个字段整条请求就 400
+// （实测被拒：additionalProperties / $schema / $ref / oneOf / allOf / const / format / default / exclusiveMinimum）。
+// 所以声明前必须递归清洗：白名单外的一律丢掉，oneOf/allOf → anyOf，const → enum。
+const GEMINI_SCHEMA_KEYS = new Set(['type', 'title', 'description', 'nullable', 'enum', 'maxItems', 'minItems',
+    'properties', 'required', 'items', 'minimum', 'maximum', 'minLength', 'maxLength', 'pattern', 'anyOf', 'propertyOrdering']);
+function geminiSchema(schema, depth = 0) {
+    if (depth > 12) return { type: 'object', properties: {} };
+    if (Array.isArray(schema)) return { type: 'array', items: geminiSchema(schema[0] || {}, depth + 1) };
+    if (!schema || typeof schema !== 'object') return { type: 'string' };
+    const out = {};
+    for (const [k, v] of Object.entries(schema)) {
+        if (k === 'oneOf' || k === 'allOf') {                         // Gemini 只认 anyOf
+            if (Array.isArray(v)) out.anyOf = v.map((x) => geminiSchema(x, depth + 1));
+            continue;
+        }
+        if (k === 'const') { out.enum = [v]; continue; }
+        if (k === 'properties' && v && typeof v === 'object') {
+            const props = {};
+            for (const [pk, pv] of Object.entries(v)) props[pk] = geminiSchema(pv, depth + 1);
+            out.properties = props;
+            if (!out.type) out.type = 'object';
+            continue;
+        }
+        if (k === 'items') { out.items = geminiSchema(v, depth + 1); if (!out.type) out.type = 'array'; continue; }
+        if (k === 'required' && Array.isArray(v)) { out.required = v.filter((x) => typeof x === 'string'); continue; }
+        if (!GEMINI_SCHEMA_KEYS.has(k)) continue;                     // $ref/$defs/additionalProperties/format/default… 全丢
+        out[k] = k === 'type' ? String(v).toLowerCase() : v;
+    }
+    if (out.required && out.properties) {                             // required 里不能出现没声明的字段
+        out.required = out.required.filter((x) => Object.prototype.hasOwnProperty.call(out.properties, x));
+        if (!out.required.length) delete out.required;
+    }
+    if (!out.type && !out.anyOf) out.type = out.properties ? 'object' : 'string';
+    return out;
+}
 function geminiThinkingLevel(effort) {
     const e = String(effort || '').trim().toLowerCase();
     if (!e) return null;
@@ -2253,20 +2374,37 @@ function chatToGemini(body, model, providerCfg) {
         const parts = geminiPartsOf(m.content);                      // user
         if (parts.length) contents.push({ role: 'user', parts });
     }
+    // 轮次规范化（Gemini 硬要求，2026-11-20 实测）：
+    //  ① 必须以 user 轮结尾 —— "Requests ending with a model turn are not supported."
+    //     酒馆/部分客户端会用 assistant 预填充（prefill），Gemini 不支持预填充，只能追加一句继续指令；
+    //  ② 同角色连续两轮要合并（Gemini 要求 user/model 交替）；
+    //  ③ 一条都没有（只有 system）时补一个 user。
+    const merged = [];
+    for (const c of contents) {
+        const last = merged[merged.length - 1];
+        if (last && last.role === c.role) last.parts.push(...c.parts);
+        else merged.push({ role: c.role, parts: [...c.parts] });
+    }
+    if (merged.length && merged[merged.length - 1].role === 'model') {
+        merged.push({ role: 'user', parts: [{ text: String((CFG && CFG.gemini_continue) || '继续') }] });
+        log('[gemini] 请求以 model 轮结尾（客户端预填充）→ 追加继续指令');
+    }
+    if (!merged.length) merged.push({ role: 'user', parts: [{ text: '继续' }] });
     const gen = {};
     const maxTok = body.max_tokens ?? body.max_completion_tokens;
     if (maxTok != null) gen.maxOutputTokens = maxTok;               // 实测思考 token 也计入这个上限
     if (body.temperature != null) gen.temperature = body.temperature;
     if (body.top_p != null) gen.topP = body.top_p;
     if (body.stop != null) { const s = Array.isArray(body.stop) ? body.stop : [body.stop]; if (s.length) gen.stopSequences = s.slice(0, 5); }
-    const payload = { contents };
+    const payload = { contents: merged };
     if (sysParts.length) payload.systemInstruction = { parts: sysParts };
     if (Array.isArray(body.tools) && body.tools.length) {
         const decls = body.tools.filter((t) => t.type === 'function' && t.function?.name).map((t) => ({
             name: t.function.name,
             ...(t.function.description ? { description: t.function.description } : {}),
-            // 实测 parameters 直接吃小写 JSON Schema（OpenAI 风），不用转大写 Type
-            parameters: t.function.parameters || { type: 'object', properties: {} },
+            // 实测 parameters 直接吃小写 JSON Schema（OpenAI 风），不用转大写 Type，
+            // 但必须洗成 OpenAPI 子集（多一个 additionalProperties 就整条 400）
+            parameters: geminiSchema(t.function.parameters || { type: 'object', properties: {} }),
         }));
         if (decls.length) payload.tools = [{ functionDeclarations: decls }];
         const tc = body.tool_choice;
@@ -2716,9 +2854,19 @@ function responsesToChatReq(body) {
             msgs.push({ role: 'tool', tool_call_id: it.call_id, content: typeof it.output === 'string' ? it.output : jdump(it.output ?? '') });
         } else if (t === 'reasoning') {
             // chat 装不下 Responses 的推理项（加密 blob），丢弃
+        } else if (t === 'input_image' || t === 'image_url') {
+            const im = imagePartOf(it);            // 图片有时是顶层 item，而不是 message 里的一块
+            if (im) msgs.push({ role: 'user', content: [chatImagePart(im)] });
         } else if (t === 'message' || it.role) {
             const role = (it.role === 'developer' || it.role === 'system') ? 'system' : (it.role || 'user');
-            msgs.push({ role, content: textOf(it.content) });
+            const imgs = imagesIn(it.content);
+            if (imgs.length) {                     // input_image → chat image_url（否则 textOf 会把图丢干净）
+                const parts = [];
+                const txt = textOf(it.content);
+                if (txt) parts.push({ type: 'text', text: txt });
+                for (const im of imgs) parts.push(chatImagePart(im));
+                msgs.push({ role, content: parts });
+            } else msgs.push({ role, content: textOf(it.content) });
         }
     }
     flush();
@@ -2747,17 +2895,26 @@ function messagesToChatReq(body) {
         const role = m.role === 'assistant' ? 'assistant' : 'user';
         if (typeof m.content === 'string') { msgs.push({ role, content: m.content }); continue; }
         const parts = Array.isArray(m.content) ? m.content : [];
-        const texts = [], thinking = [], toolCalls = [], toolResults = [];
+        const texts = [], thinking = [], toolCalls = [], toolResults = [], images = [];
         for (const p of parts) {
             if (!p || typeof p !== 'object') continue;
             if (p.type === 'text') texts.push(p.text || '');
             else if (p.type === 'thinking') thinking.push(p.thinking || '');
             else if (p.type === 'tool_use') toolCalls.push({ id: p.id, type: 'function', function: { name: p.name || '', arguments: typeof p.input === 'string' ? p.input : jdump(p.input || {}) } });
             else if (p.type === 'tool_result') toolResults.push({ id: p.tool_use_id, content: textOf(p.content) });
+            else if (p.type === 'image' || p.type === 'document') { const im = imagePartOf(p); if (im) images.push(im); }
         }
+        // 有图时 content 必须是块数组（Anthropic image 块 → chat image_url）
+        const chatContent = (text) => {
+            if (!images.length) return text;
+            const ps = [];
+            if (text) ps.push({ type: 'text', text });
+            for (const im of images) ps.push(chatImagePart(im));
+            return ps;
+        };
         if (toolResults.length) {              // Anthropic 把 tool_result 放在 user 消息里 → chat 要拆成独立 role:tool
             for (const tr of toolResults) msgs.push({ role: 'tool', tool_call_id: tr.id, content: tr.content });
-            if (texts.length) msgs.push({ role, content: texts.join('') });
+            if (texts.length || images.length) msgs.push({ role, content: chatContent(texts.join('')) });
             continue;
         }
         if (toolCalls.length) {
@@ -2767,7 +2924,7 @@ function messagesToChatReq(body) {
             continue;
         }
         if (thinking.length && role === 'assistant') { msgs.push({ role: 'assistant', content: texts.join('') || null, reasoning_content: thinking.join('\n') }); continue; }
-        msgs.push({ role, content: texts.join('') });
+        msgs.push({ role, content: chatContent(texts.join('')) });
     }
     const out = { model: body.model, messages: msgs, stream: !!body.stream };
     if (body.max_tokens != null) out.max_tokens = body.max_tokens;
@@ -3095,6 +3252,7 @@ function configView(who) {
                 has_key: !!(process.env[p.api_key_env] || '').length,
                 user_agent: !!p.user_agent,
                 reasoning_echo: !!p.reasoning_echo,
+                format: p.format || '',                        // 供应商级默认上游协议（空＝自动探测）
                 strip_body_fields: Array.isArray(p.strip_body_fields) ? p.strip_body_fields.length : 0,
                 extra_headers: Object.keys(p.extra_headers || {}),
                 prefix: route ? route.strip.replace(/\/$/, '') : '',
@@ -3322,9 +3480,11 @@ function applyConfigChange(p, b, who) {
         const pUrl = String(b.base_url).replace(/\/+$/, '');
         const pExtra = autoUpstreamHeaders(pUrl, b.extra_headers);
         const pUA = b.user_agent ? String(b.user_agent) : (isSessionHost(pUrl) ? DEFAULT_ALT_UA : '');
+        const pFmt = normProviderFormat(b.format || b.protocol);
         cfg.providers[name] = {
             base_url: pUrl,
             api_key_env: envName,
+            ...(pFmt ? { format: pFmt } : {}),
             ...(pUA ? { user_agent: pUA } : {}),
             ...(Object.keys(pExtra).length ? { extra_headers: pExtra } : {}),
             ...(b.reasoning_echo ? { reasoning_echo: true } : {}),
@@ -3386,6 +3546,17 @@ function applyConfigChange(p, b, who) {
         if (b.reasoning_echo !== undefined) {
             if (b.reasoning_echo) { if (!prov.reasoning_echo) { prov.reasoning_echo = true; changed.push('reasoning_echo(开)'); } }
             else if (prov.reasoning_echo) { delete prov.reasoning_echo; changed.push('reasoning_echo(关)'); }
+        }
+        if (b.format !== undefined || b.protocol !== undefined) {   // 供应商级默认上游协议（留空＝清除，回到自动探测）
+            const f = normProviderFormat(b.format !== undefined ? b.format : b.protocol);
+            const before = prov.format || '';
+            if (f) { if (prov.format !== f) { prov.format = f; changed.push('format:' + f); } }
+            else if (prov.format) { delete prov.format; changed.push('format(已清除)'); }
+            if ((prov.format || '') !== before) {              // 协议变了：把这家学到的探测记忆一并清掉，
+                let n = 0;                                     // 否则旧记忆会把刚改的值顶回去（实测踩过）
+                for (const k of Object.keys(FORMAT_OVERRIDES)) if (k.startsWith(name + '|')) { delete FORMAT_OVERRIDES[k]; n++; }
+                if (n) { saveOverrides(); changed.push(`清掉 ${n} 条协议记忆`); }
+            }
         }
         if (b.strip_body_fields !== undefined) {          // body 字段屏蔽（逗号串或数组，留空＝清除）
             const next = normStripFields(b.strip_body_fields);
@@ -3650,7 +3821,7 @@ function applyConfigChange(p, b, who) {
     }
     if (p === '/api/config/web_search') {            // web_search 代理：开关与参数（改完热生效）
         const w = cfg.web_search || {};
-        for (const k of ['enabled', 'base_url', 'api_key_env', 'tool_name', 'count', 'need_content', 'max_rounds', 'max_calls', 'description']) {
+        for (const k of ['enabled', 'mode', 'inject', 'base_url', 'api_key_env', 'tool_name', 'count', 'need_content', 'max_rounds', 'max_calls', 'description']) {
             if (!(k in b)) continue;
             if (b[k] === null || b[k] === '') delete w[k]; else w[k] = b[k];
         }
@@ -3658,7 +3829,7 @@ function applyConfigChange(p, b, who) {
         if (Array.isArray(b.models)) { if (b.models.length) w.models = b.models; else delete w.models; }
         cfg.web_search = w;
         saveConfig(cfg); reloadConfig();
-        log('CONFIG web_search', w.enabled ? 'ON' : 'OFF', w.tool_name || 'web_search', `rounds=${w.max_rounds == null ? 3 : w.max_rounds}`);
+        log('CONFIG web_search', w.enabled ? 'ON' : 'OFF', w.tool_name || 'web_search', `mode=${wsMode()}`, `rounds=${w.max_rounds == null ? 3 : w.max_rounds}`);
         return { web_search: w };
     }
     if (p === '/api/config/toggle_capture') {        // 抓包开关：热生效，不用重启
@@ -3813,7 +3984,7 @@ const GO_PRICES = (CFG.prices && typeof CFG.prices === 'object') ? CFG.prices : 
 const GO_PEAK = (CFG.peak_prices && typeof CFG.peak_prices === 'object') ? CFG.peak_prices : {};
 function goUnit(model, atMs) {
     if (!model) return null;
-    if (/-free$/.test(model)) return { in: 0, out: 0, cached: 0, cap: null };   // 官方标注 Unlimited 的免费档
+    if (/-free$/.test(model)) return { in: 0, out: 0, cached: 0, cap: null };   // 免费档（不计费）
     if (GO_PRICES[model]) return GO_PRICES[model];
     const pk = GO_PEAK[model];
     if (!pk) return null;
@@ -4035,7 +4206,48 @@ async function upstreamBalance() {         // 上游余额接口（url / key 环
     } catch (e) { return { ok: false, error: String((e && e.message) || e).slice(0, 160) }; }
 }
 const QUOTA_TTL_MS = 5 * 60 * 1000;
+const QUOTA_FILE = path.join(STATE_DIR, 'quota-cache.json');
 let QUOTA_CACHE = { t: 0, data: null };
+let QUOTA_INFLIGHT = null;                 // 去重：并发请求只跑一份重算
+try {                                      // 重启后先拿上次快照垫着，首屏不用等上游
+    const q = JSON.parse(fs.readFileSync(QUOTA_FILE, 'utf8'));
+    if (q && q.data) QUOTA_CACHE = { t: Number(q.t) || 0, data: q.data };
+} catch { }
+// 重算一份完整快照：两条独立上游并行，本地聚合同步做，最后补每模型用量
+async function computeQuotaSnapshot() {
+    const t0 = Date.now();
+    const [ds, goQuota] = await Promise.all([upstreamBalance(), upstreamUsage()]);
+    const t1 = Date.now();
+    const go = computeGoUsage();
+    const anchor = goCycleAnchor(goQuota);
+    const cycles = anchor ? computeGoCycles(anchor) : null;
+    const t2 = Date.now();
+    const t3 = Date.now();
+    log(`[quota] 重算 ${t3 - t0}ms（上游 ${t1 - t0} · 本地 ${t2 - t1} · 每模型 ${t3 - t2}）`);
+    return {
+        ts: t3,
+        balance: { ...ds, at: t3 },
+        usage: {
+            quota: goQuota,
+            detail_note: '网关侧明细：按 config.prices 的单价 × 本网关记录的 token 估算，只覆盖走本网关的流量',
+            cycle_stats: cycles ? { anchor, base: GO_BASE_USD, cycles } : null,
+            ...go,
+        },
+    };
+}
+function refreshQuotaSnapshot() {
+    if (!QUOTA_INFLIGHT) {
+        QUOTA_INFLIGHT = computeQuotaSnapshot()
+            .then((data) => {
+                QUOTA_CACHE = { t: Date.now(), data };
+                try { fs.writeFileSync(QUOTA_FILE, JSON.stringify(QUOTA_CACHE)); } catch (e) { log('[quota] 快照落盘失败', e.message); }
+                return data;
+            })
+            .catch((e) => { log('[quota] 重算失败', e.message); return null; })
+            .finally(() => { QUOTA_INFLIGHT = null; });
+    }
+    return QUOTA_INFLIGHT;
+}
 
 const preHash = (s, n) => crypto.createHash('sha1').update(s.slice(0, n)).digest('hex').slice(0, 10);
 function convFingerprint(body) {   // 会话指纹：系统提示 + 第一条 user 消息的哈希；判断缓存好坏必须按会话分组
@@ -4201,25 +4413,15 @@ const server = http.createServer(async (req, res) => {
         if (!who.admin) return sendJson(res, 403, { error: { message: '只有管理员能看全量上游额度' } });
         const now = Date.now();
         const force = url.searchParams.get('refresh') === '1';
-        if (force || !QUOTA_CACHE.data || now - QUOTA_CACHE.t > QUOTA_TTL_MS) {
-            const ds = await upstreamBalance();
-            const goQuota = await upstreamUsage();
-            const go = computeGoUsage();
-            const anchor = goCycleAnchor(goQuota);
-            const cycles = anchor ? computeGoCycles(anchor) : null;
-            QUOTA_CACHE = {
-                t: now,
-                data: {
-                    ts: now,
-                    balance: { ...ds, at: now },
-                    usage: {
-                        quota: goQuota,
-                        detail_note: '网关侧明细：按 config.prices 的单价 × 本网关记录的 token 估算，只覆盖走本网关的流量',
-                        cycle_stats: cycles ? { anchor, base: GO_BASE_USD, cycles } : null,
-                        ...go,
-                    },
-                },
-            };
+        const fresh = !!QUOTA_CACHE.data && now - QUOTA_CACHE.t <= QUOTA_TTL_MS;
+        if (force) {
+            await refreshQuotaSnapshot();                 // 手动刷新：等真数据（失败则回旧快照）
+        } else if (!fresh) {
+            refreshQuotaSnapshot().catch(() => { });      // 过期：先回旧数据，后台并行刷新，不阻塞首屏
+        }
+        if (!QUOTA_CACHE.data) {                          // 从来没成功过 → 只能等一次
+            const d = await refreshQuotaSnapshot();
+            if (!d) return sendJson(res, 502, { error: { message: '额度读取失败（上游无响应）', type: 'upstream_error' } });
         }
         return sendJson(res, 200, QUOTA_CACHE.data);
     }
@@ -4370,6 +4572,7 @@ const server = http.createServer(async (req, res) => {
                     api_key_env: p.api_key_env || '',
                     has_key: !!(process.env[p.api_key_env] || '').length,
                     user_agent: p.user_agent || '',
+                    format: p.format || '',
                     reasoning_echo: !!p.reasoning_echo,
                     strip_body_fields: Array.isArray(p.strip_body_fields) ? p.strip_body_fields : [],
                     quota_url: p.quota_url || '',
@@ -4613,7 +4816,7 @@ const server = http.createServer(async (req, res) => {
         const upFmt = resolveFormat(pRt);
         // web_search 代理要用循环续跑，只能在 chat 中枢里做；同协议直通（responses↔responses、messages↔messages）
         // 是逐字节回吐，插不进循环。所以开了代理就强制走中枢（仅当客户端没在用上游原生服务端工具时）。
-        const wsForce = wsEnabledFor(pRt) && !(Array.isArray(pBody.tools) && pBody.tools.some((t) => t && t.type && t.type !== 'function'));
+        const wsForce = wsMode() !== 'off' && wsEnabledFor(pRt) && !(Array.isArray(pBody.tools) && pBody.tools.some((t) => t && t.type && t.type !== 'function'));
         if ((upFmt !== kind && pAuth.interop) || wsForce) {
             if (wsForce && upFmt === kind) log('WS INTEROP', kind, '->', upFmt, pBody.model, '(代理需中枢，不走原生直通)');
             else log('CONVERT', kind, '->', upFmt, pBody.model);
@@ -4809,3 +5012,7 @@ server.listen(port, host, () => log(`gateway listening on ${host}:${port} — ke
 // 成员额度定时刷新：只有 quota 策略的池成员才会真去打接口，没配就是空转
 refreshQuotas().catch(() => { });
 setInterval(() => refreshQuotas().catch(() => { }), POOL_QUOTA_TTL_MS).unref?.();
+// web_search 代理的老配置（enabled:true 但没写 mode）一律按 off：不注入、不拦截、不产生搜索计费
+if (wsCfg().enabled && wsMode() === 'off') log('[ws] web_search.enabled=true 但未设 mode → 按 off 处理，不会注入搜索工具（要主动注入请显式 mode:"inject"）');
+// 预热额度快照：面板首屏直接命中，不必等上游
+refreshQuotaSnapshot().catch(() => { });

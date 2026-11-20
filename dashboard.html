@@ -522,6 +522,14 @@
           <div class="field"><label>名称（英文，唯一）</label><input id="p_name" placeholder="myapi"></div>
           <div class="field"><label>客户端前缀（模型名 = 前缀/模型ID，默认同名称）</label><input id="p_prefix" placeholder="myapi"></div>
           <div class="field"><label>Base URL（写到 /v1 为止）</label><input id="p_url" placeholder="https://api.example.com/v1"></div>
+          <div class="field"><label>上游协议（这家供应商默认走哪种；留空＝逐模型自动探测。模型级可单独覆盖）</label>
+            <select id="p_fmt">
+              <option value="">自动探测（默认）</option>
+              <option value="chat">chat · /chat/completions</option>
+              <option value="responses">responses · /responses</option>
+              <option value="messages">messages · /messages（Anthropic）</option>
+              <option value="gemini">gemini · :generateContent（Google 原生）</option>
+            </select></div>
           <div class="field"><label>API key（写入 .env，不回显）</label><input id="p_key" type="password" placeholder="sk-..."></div>
           <div class="field"><label>key 环境变量名（留空自动）</label><input id="p_env" placeholder="MYAPI_API_KEY"></div>
           <div class="field"><label>User-Agent（可选，某些上游必须要浏览器 UA）</label>
@@ -1758,7 +1766,7 @@ $('m_probe_shown').onclick = () => {
 };
 
 /* 供应商列表：正式 / 测试 两组，各自可折叠（测试组默认折叠，状态存 localStorage） */
-const PV_HEAD = ['供应商', 'Base URL', '前缀', 'key', '模型数', '参与统计', '操作'];
+const PV_HEAD = ['供应商', 'Base URL', '前缀', '协议', 'key', '模型数', '参与统计', '操作'];
 const PV_COLLAPSE_KEY = 'gw_pv_collapsed';
 let PV_COLLAPSED = { real: false, test: true };
 try { PV_COLLAPSED = Object.assign(PV_COLLAPSED, JSON.parse(localStorage.getItem(PV_COLLAPSE_KEY) || '{}') || {}); } catch { }
@@ -1771,6 +1779,7 @@ function pvRow(p) {
     (p.reasoning_echo ? ' <span class="pill" title="reasoning_echo：保思维链">回灌</span>' : '') +
     (p.efforts && p.efforts.length ? ` <span class="pill" title="供应商级默认推理档位（模型级可覆盖）">档位 ${p.efforts.join('/')}</span>` : ''),
     `<span class="dim">${esc(p.base_url)}</span>`, esc(p.prefix || '-'),
+    p.format ? `<span class="pill" title="供应商级默认协议（模型级可覆盖）">${esc(p.format)}</span>` : '<span class="dim">自动</span>',
     p.has_key ? '<span class="green">已设置</span>' : '<span class="red">未设置</span>',
     p.models,
     `<label title="不参与统计：该供应商的流量不计入 概览 / 按模型 / 按上游（「最近请求」始终全量显示）。&#10;状态只存在本浏览器，不改配置、不改数据库。&#10;默认：base_url 指向本机（mock/测试上游）的不参与统计。" style="display:flex;gap:6px;align-items:center;justify-content:center;cursor:help"><input type="checkbox" data-pstat="${esc(p.name)}" style="width:auto"${inS ? ' checked' : ''}><span class="dim" style="font-size:calc(var(--fs)*0.8)">${inS ? '参与' : '不参与'}</span></label>`,
@@ -2103,6 +2112,7 @@ let EDIT_NAME = null, UA_ORIG = '', HDR_ORIG = '';
 function resetProviderForm() {
   EDIT_NAME = null; UA_ORIG = ''; HDR_ORIG = '';
   ['p_name', 'p_prefix', 'p_url', 'p_env', 'p_ua', 'p_hdr', 'p_key', 'p_efforts', 'p_quota', 'p_qamount', 'p_qday'].forEach(id => { $(id).value = ''; $(id).disabled = false; });
+  $('p_fmt').value = '';                         // 供应商级默认协议：缺省＝自动探测
   $('p_ua').value = ALT_UA;                      // 新建默认填替代 UA（编辑时会被 startEditProvider 覆盖回原值）
   $('p_qmode').value = ''; $('p_qunit').value = 'tokens'; $('p_qcycle').value = 'month';
   $('p_echo').checked = false;
@@ -2135,6 +2145,7 @@ async function startEditProvider(name) {
     $('p_name').value = d.name; $('p_name').disabled = true;
     $('p_prefix').value = d.prefix || ''; $('p_prefix').disabled = true;
     $('p_url').value = d.base_url || '';
+    $('p_fmt').value = d.format || '';
     $('p_env').value = d.api_key_env || '';
     $('p_key').value = ''; $('p_key').placeholder = d.has_key ? '已设置，留空即不改' : '未设置，填一个';
     $('p_ua').value = UA_ORIG;
@@ -2168,7 +2179,7 @@ $('p_submit').onclick = async () => {
       if (!ua && UA_ORIG && !confirm(`清空「${EDIT_NAME}」的 User-Agent？\n\n部分上游（有 WAF 前置的）会直接 403 error 1010，确认清空？`)) return;
       if (!hdr && HDR_ORIG && !confirm(`清空「${EDIT_NAME}」的额外请求头？\n\n原值：${HDR_ORIG}\n确认清空？`)) return;
       const r = await api('/api/config/provider/update', {
-        name: EDIT_NAME, base_url: $('p_url').value.trim(),
+        name: EDIT_NAME, base_url: $('p_url').value.trim(), format: $('p_fmt').value,
         api_key: $('p_key').value.trim(), api_key_env: $('p_env').value.trim(),
         user_agent: ua, extra_headers: extra || {}, reasoning_echo: $('p_echo').checked, test: $('p_test').checked,
         efforts: $('p_efforts').value.trim(), quota: quotaFormValue(),
@@ -2180,6 +2191,7 @@ $('p_submit').onclick = async () => {
     }
     const r = await api('/api/config/provider', {
       name: $('p_name').value.trim(), prefix: $('p_prefix').value.trim(), base_url: $('p_url').value.trim(),
+      format: $('p_fmt').value,
       api_key: $('p_key').value.trim(), api_key_env: $('p_env').value.trim(),
       user_agent: $('p_ua').value.trim(), extra_headers: extra, reasoning_echo: $('p_echo').checked,
       test: $('p_test').checked, efforts: $('p_efforts').value.trim(), quota: quotaFormValue(),
@@ -2575,7 +2587,6 @@ async function renderQuota(force) {
     const goCell = q.ok
       ? `${qItem('5小时', q.rolling)} &nbsp;·&nbsp; ${qItem('本周', q.weekly)} &nbsp;·&nbsp; ${qItem('本月', q.monthly)}`
       : `<span class="red">读取失败</span> <span class="dim" style="font-size:calc(var(--fs)*0.78)">${esc(q.error || '')}</span>`;
-    const rows = (go.models || []).filter(m => m.d30 > 0 || m.h5 > 0);
     // ---- 订阅周期（月付，锚点＝官方下次续费时刻）----
     const nowMs = Date.now();
     const cs = go.cycle_stats || null;
@@ -2602,15 +2613,7 @@ async function renderQuota(force) {
       ${cycleBox}
       <div class="dim" style="font-size:calc(var(--fs)*0.85)">网关侧明细：5 小时 <span class="amber">${usd(w.h5)}</span> · 本周 <span class="amber">${usd(w.w7)}</span> · 30 天 <span class="amber">${usd(w.d30)}</span>
         <span style="font-size:calc(var(--fs)*0.78)">（${rq.h5 || 0} / ${rq.w7 || 0} / ${rq.d30 || 0} 次）</span></div>`
-      + (rows.length ? '<div class="tblwrap" style="margin-top:6px"><table id="tbl_quota"></table></div>' : '')
-      + `<div class="hint" style="margin-top:6px">${esc(go.detail_note || '')}；订阅周期按官方续费锚点切分，官方百分比含其它设备直连 Go 的用量；* 含价格表未收录的模型（只按已计价部分折算）</div>`;
-    if (rows.length) {
-      table($('tbl_quota'), ['模型', '5 小时', '本周', '30 天', '月上限', '月占比'],
-        rows.map(m => [esc(m.model), usd(m.h5), usd(m.w7), usd(m.d30),
-          m.cap ? '$' + m.cap : (/-free$/.test(m.model) ? '<span class="green">免费</span>' : '<span class="dim">未计价</span>'),
-          m.cap ? `<span class="${hitCls(m.d30 / m.cap * 100)}">${(m.d30 / m.cap * 100).toFixed(1)}%</span>` : '—']),
-        '暂无', null, [0], 22);
-    }
+      + `<div class="hint" style="margin-top:6px">${esc(go.detail_note || '')}；订阅周期按续费锚点切分；* 含价格表未收录的模型（只按已计价部分折算）</div>`;
     if (cyc.length) {
       table($('tbl_cycle'), ['订阅周期', '请求', '输入 / 命中缓存 / 输出', '已产生费用', '占限额'],
         cyc.map(x => {
