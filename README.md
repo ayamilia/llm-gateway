@@ -207,6 +207,10 @@ node server.mjs                       # 或 docker compose up -d
 - 反代后面要关掉响应缓冲，否则流式会被攒成一坨再吐。
 - 面板挂公网默认单步验证（`config.dashboard_auth.hosts`）。
 - `responses`-`messages` 的互转是**可选且默认关**的（面板 key 页勾选），会丢保真度——见上面「协议互转」。
+- **面板的「本机直连」是按 TCP 对端地址判定的**（loopback / 容器默认网关），不看 `Host` 之类可伪造的请求头；没配 `owner` 的旧 key 默认**只能跑 `/v1`、进不了面板**，本机脚本要用面板 API 才设 `GATEWAY_LEGACY_KEY_ADMIN=1`。
+- 请求体有硬上限（`GATEWAY_MAX_BODY_MB`，默认 64MB）；面板接口额外拒绝 `Transfer-Encoding: chunked` 的请求（411）。带 base64 图片的客户端按需调大。
+- 面板密码存 scrypt（`scrypt$N$r$p$salt$hash`），旧的 `sha256(salt+pw)` 记录仍能登录、**成功后自动升级**；据此改密/改角色会把该账号的旧会话踢掉。
+- 统计里的 499 = 客户端断开、504 = 上游长时间无数据（看门狗）、502 = 上游失败或流传到一半被截断（带 `error` 字段）。
 
 ## 目录
 

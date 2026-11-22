@@ -289,6 +289,7 @@
     <span id="status" class="dim">连接中…</span>
     <button id="gw_toggle" class="gwtoggle adminonly">网关：--</button>
     <button id="cap_toggle" class="gwtoggle adminonly">抓包：--</button>
+    <button id="um_toggle" class="gwtoggle adminonly" title="多用户模式：面板用户管理 + 按用户用量概览&#10;默认关闭（单用户界面）。开关状态只存在本浏览器，不改配置。">多用户：--</button>
     <span class="spacer"></span>
     <span id="me_chip" class="mechip hidden"><span>登录为</span><b id="me_name">-</b><span id="me_role" class="roleuser"></span></span>
     <button id="logout" class="gwtoggle hidden">登出</button>
@@ -306,7 +307,7 @@
     <button data-tab="providers" class="adminonly">增加供应商</button>
     <button data-tab="pools">上游组</button>
     <button data-tab="keys">客户端 key</button>
-    <button data-tab="users" class="adminonly">用户</button>
+    <button data-tab="users" class="adminonly hidden" id="nav_users">多用户</button>
     <span class="spacer"></span>
     <button id="reload">刷新</button>
   </div>
@@ -744,8 +745,15 @@
     </div>
   </section>
 
-  <!-- ================= 面板用户（管理员） ================= -->
+  <!-- ================= 多用户模式（默认隐藏，顶栏「多用户」开关打开才显示） ================= -->
   <section id="tab-users" class="hidden">
+    <div class="box" style="margin-bottom:10px">
+      <div class="h">按用户用量<span class="line"></span><span class="dim" id="um_hint"></span></div>
+      <div class="b" style="padding:0 6px 6px">
+        <div class="tblwrap"><table id="tbl_um"></table></div>
+        <div class="hint" style="margin-top:8px">归属取每个客户端 key 的 <code>owner</code>；没有 owner 的 key 归到「未归属」。数字随上方统计口径（时间范围 / 走上游组·网关直接转发）变化。</div>
+      </div>
+    </div>
     <div class="box" style="margin-bottom:10px">
       <div class="h">面板用户<span class="line"></span><span class="dim" id="us_sum"></span></div>
       <div class="b" style="padding:0 6px 6px">
@@ -758,7 +766,7 @@
       <div class="b">
         <div class="grid3">
           <div class="field"><label>用户名</label><input id="us_name" placeholder="alice"></div>
-          <div class="field"><label>密码（≥6 位；留空＝不改）</label><input id="us_pass" type="password" autocomplete="new-password"></div>
+          <div class="field"><label>密码（≥8 位；留空＝不改）</label><input id="us_pass" type="password" autocomplete="new-password"></div>
           <div class="field"><label>角色</label>
             <select id="us_role"><option value="user">普通用户</option><option value="admin">管理员</option></select></div>
         </div>
@@ -1059,6 +1067,7 @@ function applyRole() {
   // 普通用户能看：概览 / 按模型 / 最近请求（三者都只统计自己名下的 key）；其它子页拉回概览
   const USER_SUBS = ['overview', 'bymodel', 'recent'];
   if (!ADMIN() && !USER_SUBS.includes(SUB)) { SUB = 'overview'; syncSub(); }
+  renderUmode();                                     // 多用户入口：默认关，只有模式打开才显示页签
 }
 
 /* ---------- 导航 ---------- */
@@ -1076,6 +1085,7 @@ document.querySelectorAll('#subnav button[data-sub]').forEach(b => b.onclick = (
 });
 document.querySelectorAll('.nav button[data-tab]').forEach(b => b.onclick = () => {
   if (!ADMIN() && b.classList.contains('adminonly')) return;
+  if (b.dataset.tab === 'users' && !UMODE) return;    // 单用户界面下不开放多用户页
   TAB = b.dataset.tab;
   document.querySelectorAll('.nav button[data-tab]').forEach(x => x.classList.toggle('on', x === b));
   ['stats', 'models', 'providers', 'pools', 'keys', 'users'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== TAB));
@@ -1086,9 +1096,70 @@ document.querySelectorAll('.nav button[data-tab]').forEach(b => b.onclick = () =
     if (TAB === 'providers') renderProviders();
     if (TAB === 'pools') renderPools();
     if (TAB === 'keys') renderKeys();
-    if (TAB === 'users') renderUsers();
+    if (TAB === 'users') { renderUsers(); renderUmUsage(); }
   });
 });
+
+/* ---------- 多用户模式（隔离入口，默认关 ＝ 单用户界面） ----------
+   纯界面开关：只决定「多用户」页签是否出现在导航里，不改 config.json、
+   不影响 /v1 转发与任何后端逻辑。状态存本浏览器 localStorage。 */
+let UMODE = localStorage.getItem('gw_umode') === '1';
+function renderUmode() {
+  const b = $('um_toggle');
+  if (b) {
+    b.textContent = '多用户：' + (UMODE ? '开' : '关');
+    b.classList.toggle('on', UMODE);
+    b.classList.toggle('off', !UMODE);
+  }
+  const nav = $('nav_users');
+  if (nav) nav.classList.toggle('hidden', !(ADMIN() && UMODE));
+  // 关掉时若正停在多用户页，退回用量统计，避免停在空白页
+  if (!UMODE && TAB === 'users') {
+    TAB = 'stats';
+    document.querySelectorAll('.nav button[data-tab]').forEach(x => x.classList.toggle('on', x.dataset.tab === 'stats'));
+    ['stats', 'models', 'providers', 'pools', 'keys', 'users'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== 'stats'));
+    syncSub();
+    refreshStats();
+  }
+}
+$('um_toggle').onclick = () => {
+  if (!ADMIN()) return;                              // 按钮本来就是 adminonly 隐藏，这里再挡一道（防控制台直接调用）
+  UMODE = !UMODE;
+  localStorage.setItem('gw_umode', UMODE ? '1' : '0');
+  renderUmode();
+  if (UMODE) { const n = $('nav_users'); if (n && typeof n.onclick === 'function') n.onclick(); }
+  else toast('已切回单用户界面');
+};
+// 按用户用量概览：/api/stats 的 by_key 按 key 归属（owner）聚合，纯前端完成，不改后端
+function renderUmUsage() {
+  if (!CONF || !ADMIN()) return;
+  const ownerOf = {};
+  (CONF.keys || []).forEach(k => { ownerOf[k.name] = String(k.owner || '').trim(); });
+  const blank = () => ({ requests: 0, in: 0, out: 0, cached: 0, ms: 0, ttft: 0, keys: [] });
+  const agg = {};
+  const bk = (STATS && STATS.by_key) || {};
+  for (const [kn, v] of Object.entries(bk)) {
+    const who = ownerOf[kn] || '未归属';
+    const a = agg[who] || (agg[who] = blank());
+    for (const f of ['requests', 'in', 'out', 'cached', 'ms', 'ttft']) a[f] += Number(v[f]) || 0;
+    a.keys.push(kn);
+  }
+  (CONF.users || []).forEach(u => { if (!agg[u.name]) agg[u.name] = blank(); });
+  const ent = Object.entries(agg).sort((a, b) => b[1].requests - a[1].requests);
+  const rate = (a) => { const gen = a.ms - a.ttft; return (a.out > 0 && gen > 0) ? a.out / (gen / 1000) : 0; };
+  const rows = [], vals = [];
+  for (const [who, a] of ent) {
+    rows.push([
+      esc(who), fmt(a.requests), fmt(a.in), fmt(a.out),
+      a.in ? (a.cached / a.in * 100).toFixed(1) + '%' : '—',
+      tpsTxt(rate(a)),
+      (a.keys || []).map(esc).join(', ') || '<span class="dim">—</span>',
+    ]);
+    vals.push([a.requests, a.requests, a.in, a.out, a.in ? a.cached / a.in : 0, rate(a), a.keys.length]);
+  }
+  table($('tbl_um'), ['用户', '请求', '输入', '输出', '缓存命中', 'tok/s', '名下 key'], rows, '暂无用量', vals, [6], [24]);
+  $('um_hint').textContent = `${ent.length} 个归属 · ${Object.keys(bk).length} 个 key`;
+}
 
 /* ---------- 网关总开关 ---------- */
 let ENABLED = true;
@@ -1175,7 +1246,7 @@ function syncRange() {
 function syncMode() {
   document.querySelectorAll('#modebtns .rbtn').forEach(b => b.classList.toggle('on', (b.dataset.mode || 'pool') === DATA_MODE));
 }
-function rangeQuery() {
+function rangeQuery(withSessions) {
   const w = rangeWindow(RANGE, Date.now());
   const p = ['tz=' + (-new Date().getTimezoneOffset())];
   if (w.since != null) p.push('since=' + w.since);
@@ -1183,7 +1254,8 @@ function rangeQuery() {
   if (RANGE_UNIT[RANGE]) p.push('unit=' + RANGE_UNIT[RANGE]);      // 指定按小时/按日期分桶
   p.push('dim=key');                                               // 柱状图按客户端 key 分色
   p.push('mode=' + DATA_MODE);                                     // pool＝走上游组 / direct＝网关直接转发
-  if (SUB === 'bysession') p.push('sessions=1');                   // 「按会话」子页才要这个维度（要扫明细表，别每页都算）
+  // 「按会话」要扫明细表，只在切到本页 / 手动刷新时算，2 秒轮询不再带（原来说的是按需，实际每 2 秒都在全量扫）
+  if (withSessions) p.push('sessions=1');
   return p.join('&');
 }
 function rangeInfoText(d) {
@@ -1269,15 +1341,21 @@ function renderOfficial(ser, isDay) {
 }
 
 /* ---------- 用量统计 ---------- */
-async function refreshStats() {
+let STATS_SEQ = 0;                                 // 并发保护：只有最后一次请求的结果能落盘（M14）
+async function refreshStats(full = true) {
   if (!ME || TAB !== 'stats') return;
+  const seq = ++STATS_SEQ;
   let got;
   try {
     [got] = await Promise.all([
-      api('/api/stats?' + rangeQuery()),
+      api('/api/stats?' + rangeQuery(!!full && SUB === 'bysession')),
       refreshOfficial(),               // 官方总量：只在 5h/本周/本月拉，内部吞错，不拖累主流程
     ]);
-  } catch (e) { $('status').textContent = e.message; $('dot').className = 'dot bad'; return; }
+  } catch (e) {
+    if (seq !== STATS_SEQ) return;                   // 过期请求的失败也别覆盖新状态
+    $('status').textContent = e.message; $('dot').className = 'dot bad'; return;
+  }
+  if (seq !== STATS_SEQ) return;                   // 期间又发起了更新的请求 → 丢弃这次（慢的旧响应别覆盖新口径）
   STATS = got;
   const d = STATS;
   $('dot').className = 'dot ok';
@@ -1581,11 +1659,14 @@ function reqQueryBody() {
   if ($('f_to').value) body.until = new Date($('f_to').value).getTime();
   return body;
 }
+let REQ_SEQ = 0;                                     // 同上：请求列表也有并发覆盖问题（手动翻页 + 自动刷新）
 async function loadRequests(page) {
   if (page) REQ_PAGE = page;
+  const seq = ++REQ_SEQ;
   let d;
   try { d = await api('/api/stats/requests', reqQueryBody()); }
-  catch (e) { $('f_info').innerHTML = `<span class="red">查询失败：${esc(e.message)}</span>`; return; }
+  catch (e) { if (seq === REQ_SEQ) $('f_info').innerHTML = `<span class="red">查询失败：${esc(e.message)}</span>`; return; }
+  if (seq !== REQ_SEQ) return;                       // 更新的查询已在跑 → 丢弃这次
   REQ_PAGES = Math.max(1, Math.ceil(d.total / reqPageSize()));
   if (REQ_PAGE > REQ_PAGES) { REQ_PAGE = REQ_PAGES; return loadRequests(); }   // 页码越界（如改了每页条数）
   const keepList = (id, list, all) => {
@@ -2685,11 +2766,11 @@ async function boot() {
   } catch { }
   if (!me || !me.user) {
     if (status === 404) {
-      // 线上进程还没重启：旧服务端没有 /api/auth/*。先按管理员旧入口跑（Basic / 本机 key 仍然有效），
-      // 重启后自动进入分用户登录。
-      LEGACY = true; ME = { name: 'admin', role: 'admin', via: 'legacy' };
-      $('login').classList.add('hidden');
-      toast('服务端还是旧版本：重启 gateway 后才会启用分用户登录');
+      // 服务端没有 /api/auth/*：反代指错或跑着旧进程。不要冒充管理员渲染 UI（会把故障伪装成正常视图），
+      // 直接把问题显示出来。
+      LEGACY = false; ME = null;
+      showLogin('服务端缺少 /api/auth/*（旧版本进程或反向代理指错），请先确认网关版本');
+      return;
     } else {
       showLogin(TOKEN ? '登录已失效，请重新登录' : '');
       return;
@@ -2711,10 +2792,12 @@ async function boot() {
   else if (TAB === 'providers') renderProviders();
   else if (TAB === 'pools') renderPools();
   else if (TAB === 'keys') renderKeys();
-  else if (TAB === 'users') renderUsers();
+  else if (TAB === 'users') { renderUsers(); renderUmUsage(); }
   if (TIMERS) return;
   TIMERS = true;
-  setInterval(refreshStats, 2000);
+  // 轮询：① 不带 sessions（不每 2 秒全量扫明细表）② 「按会话」子页直接跳过——
+  // 那一页的表依赖 by_session，轮询结果没有这个字段，会把表打成「服务端还是旧版本」
+  setInterval(() => { if (SUB === 'bysession') return; refreshStats(false); }, 2000);
   setInterval(() => { if (ADMIN()) renderQuota(); }, 60000);
   setInterval(() => {
     if (!ME) return;

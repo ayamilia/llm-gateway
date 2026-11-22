@@ -9,6 +9,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import net from 'node:net';
+import dns from 'node:dns';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { StringDecoder } from 'node:string_decoder';
@@ -88,10 +90,42 @@ fs.mkdirSync(STATE_DIR, { recursive: true });
 const SESSION_PATH = path.join(STATE_DIR, 'sessions.json');
 const SESSION_TTL_MS = 7 * 24 * 3600e3;
 const USER_RE = /^[a-z0-9][a-z0-9_.-]{1,31}$/i;
-function hashPw(salt, pw) { return crypto.createHash('sha256').update(String(salt || '') + String(pw || '')).digest('hex'); }
 function pwEq(a, b) {
     const x = Buffer.from(String(a || ''), 'utf8'), y = Buffer.from(String(b || ''), 'utf8');
     return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
+}
+// ---------------- 密码哈希：scrypt（旧的单轮 sha256 仍可登录，成功后自动升级） ----------------
+// 旧格式 = sha256(salt+pw)、8 字节盐、单轮：拿到 config.json 就能低成本离线爆破。
+// 新格式 = scrypt$N$r$p$saltB64$hashB64（盐 16 字节），存放在同一字段里，靠前缀区分，不需要迁移文件。
+const SCRYPT_N = 16384, SCRYPT_R = 8, SCRYPT_P = 1, SCRYPT_KL = 32;
+function pwHashScrypt(pw) {
+    const salt = crypto.randomBytes(16);
+    const dk = crypto.scryptSync(Buffer.from(String(pw), 'utf8'), salt, SCRYPT_KL, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: 256 * 1024 * 1024 });
+    return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${dk.toString('base64')}`;
+}
+function isScryptHash(h) { return String(h || '').startsWith('scrypt$'); }
+function pwVerifyScrypt(stored, pw) {
+    const f = String(stored).split('$');
+    if (f.length !== 6) return false;
+    const N = Number(f[1]), r = Number(f[2]), p = Number(f[3]);
+    if (!(N > 0 && r > 0 && p > 0)) return false;
+    let salt, want;
+    try { salt = Buffer.from(f[4], 'base64'); want = Buffer.from(f[5], 'base64'); } catch { return false; }
+    if (!salt.length || !want.length) return false;
+    let got;
+    try { got = crypto.scryptSync(Buffer.from(String(pw), 'utf8'), salt, want.length, { N, r, p, maxmem: 256 * 1024 * 1024 }); }
+    catch { return false; }
+    return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+// 统一校验入口：新旧格式都走这里，比较一律 constant-time
+function checkPw(salt, stored, pw) {
+    const s = String(stored || '');
+    if (!s) return false;
+    if (isScryptHash(s)) return pwVerifyScrypt(s, pw);
+    const got = crypto.createHash('sha256').update(String(salt || '') + String(pw || '')).digest();
+    let want;
+    try { want = Buffer.from(s, 'hex'); } catch { return false; }
+    return want.length === got.length && crypto.timingSafeEqual(got, want);
 }
 function panelUser(name) {
     const n = String(name || '').trim();
@@ -151,6 +185,49 @@ function newSession(name) {
     pruneSessions(); saveSessions();
     return token;
 }
+// M6：改密 / 改角色 / 删用户后，把该账号的存量会话全部作废（keepToken 用于留下操作者自己这条）
+function dropSessionsOf(name, keepToken = '') {
+    const n = String(name || '').trim();
+    if (!n) return 0;
+    let killed = 0;
+    for (const [t, s] of Object.entries(SESSIONS)) if (s && s.u === n && t !== keepToken) { delete SESSIONS[t]; killed++; }
+    if (killed) saveSessions();
+    return killed;
+}
+// 老格式密码校验成功后顺手升级成 scrypt（一次性，不改变登录体验）
+function upgradePwHash(name, pw) {
+    const n = String(name || '').trim();
+    if (!n || !pw) return false;
+    const u = (CFG.users || {})[n];
+    if (u && !isScryptHash(u.password_sha256)) {
+        u.password_sha256 = pwHashScrypt(pw); saveConfig(CFG); reloadConfig();
+        log('PW UPGRADE', n, '-> scrypt'); return true;
+    }
+    const da = CFG.dashboard_auth || {};
+    if (da.username === n && !isScryptHash(da.password_sha256)) {
+        da.password_sha256 = pwHashScrypt(pw); saveConfig(CFG); reloadConfig();
+        log('PW UPGRADE', n, '(basic) -> scrypt'); return true;
+    }
+    return false;
+}
+// Basic 凭据校验结果缓存：scrypt 每次要几十毫秒，而 Basic 是每个请求都校验，必须缓存
+const BASIC_CACHE = new Map();               // sha256(Authorization 头) -> { ok, exp }
+const BASIC_CACHE_TTL = 5 * 60 * 1000;
+// 用户名不存在时也走一遍 scrypt：否则「不存在 → 立刻 401」和「存在但密码错 → 200ms」可以直接枚举账号
+const DUMMY_PW_HASH = pwHashScrypt(crypto.randomBytes(16).toString('hex'));
+// Basic 失败限速：scrypt 很贵，大量「换密码重试」会把事件循环按住。
+// 按 TCP 对端地址计数（不看可伪造的 XFF），10 分钟内 8 次失败即停，拦住这条 DoS/爆破路径。
+const BASIC_FAILS = new Map();               // socket ip -> { n, since, blockUntil }
+function basicFailBlocked(ip) { const f = BASIC_FAILS.get(ip); return !!(f && f.blockUntil > Date.now()); }
+function basicFail(ip) {
+    const now = Date.now();
+    let f = BASIC_FAILS.get(ip);
+    if (!f || now - f.since > 10 * 60e3) f = { n: 0, since: now, blockUntil: 0 };   // 10 分钟一个计数窗口
+    f.n++;
+    if (f.n >= 8) f.blockUntil = now + 10 * 60e3;                                    // 窗口内满 8 次才封 10 分钟
+    BASIC_FAILS.set(ip, f);
+    if (BASIC_FAILS.size > 500) for (const [k, v] of BASIC_FAILS) if (v.blockUntil <= now && now - v.since > 10 * 60e3) BASIC_FAILS.delete(k);
+}
 function sessionUser(req) {
     const t = String(req.headers['x-gw-token'] || '').trim();
     if (!t) return null;
@@ -169,19 +246,138 @@ function loginBlocked(ip) {
     return f.n >= 8;
 }
 function loginFailed(ip) {
+    const now = Date.now();
     const f = LOGIN_FAILS.get(ip) || { n: 0, until: 0 };
     f.n += 1;
-    if (f.n >= 8) f.until = Date.now() + 10 * 60e3;
+    if (f.n >= 8) f.until = now + 10 * 60e3;
     LOGIN_FAILS.set(ip, f);
-    if (LOGIN_FAILS.size > 500) LOGIN_FAILS.clear();
+    // 只清过期项：原来整表 clear() 会顺手把别人被锁的记录也冲掉，等于给攻击者解除封锁
+    if (LOGIN_FAILS.size > 500) for (const [k, v] of LOGIN_FAILS) if (!v.until || v.until <= now) LOGIN_FAILS.delete(k);
 }
-// 老的无归属网关 key 仍可用于面板，但只限「本机直连」（无 CF 转发头 + 本机 Host）。
+// 老的无归属网关 key 仍可用于面板，但只限「本机直连」（判定见下面 keyPanelAllowed，只看 TCP 对端地址）。
 // 远程拿一个分享出去的 key 不能读/写面板；远程一律走账号登录。
+// 容器默认网关＝宿主经 127.0.0.1:8010 端口映射进来时看到的源地址
+function defaultGwIp() {
+    try {
+        const lines = fs.readFileSync('/proc/net/route', 'utf8').trim().split('\n').slice(1);
+        for (const ln of lines) {
+            const f = ln.trim().split(/\s+/);
+            if (f[1] !== '00000000') continue;                 // 只认默认路由
+            const h = f[2];
+            if (!/^[0-9A-Fa-f]{8}$/.test(h)) continue;
+            return [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6), h.slice(6, 8)].reverse()
+                .map((x) => parseInt(x, 16)).join('.');
+        }
+    } catch { }
+    return '';
+}
+const HOST_GW_IP = defaultGwIp();
+// 「本机直连」判定：只看 TCP 对端地址，客户端可控的请求头一律不看。
+// 旧实现看 Host（['127.0.0.1','gateway'].includes || startsWith('172.')）：Host 是任意可伪造的头，
+// 且 172. 前缀覆盖整个 172.0.0.0/8 公网段 → 任何能发请求的人都能把自己伪装成本机管理员。
+// 现在：127.0.0.1/::1（容器内自调）+ 容器默认网关（宿主端口映射进来）才算本机。
+// GATEWAY_LEGACY_KEY_ADMIN 默认关闭（'0'）；确实需要「本机无主 key 调面板」时显式设成 1。
 function keyPanelAllowed(req) {
-    const h = req.headers || {};
-    if (h['cf-connecting-ip'] || h['x-forwarded-for']) return false;
-    const hn = String(h.host || '').split(':')[0];
-    return ['127.0.0.1', 'localhost', '::1', 'gateway'].includes(hn) || hn.startsWith('172.');
+    if (String(process.env.GATEWAY_LEGACY_KEY_ADMIN ?? '0') === '0') return false;
+    const ip = String((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
+    if (!ip) return false;
+    if (ip === '127.0.0.1' || ip === '::1') return true;
+    return !!HOST_GW_IP && ip === HOST_GW_IP;
+}
+// SSRF 防护：面板用户自填的上游地址不许指向本机 / 私网 / 链路本地 / 云元数据
+// 三层（复审补的）：① IPv4-mapped IPv6 归一化；② 域名先做 DNS 解析再判；③ 调用方 fetch 用 redirect:'manual'
+function unmapV4(h) {
+    const s = String(h || '').toLowerCase();
+    let m = s.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+    if (m) return m[1];
+    m = s.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (m) {
+        const hi = parseInt(m[1], 16), lo = parseInt(m[2], 16);
+        return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255].join('.');
+    }
+    return s;
+}
+function ipIsInternal(ip) {
+    const h = String(ip || '').replace(/^\[|\]$/g, '').toLowerCase();
+    if (!h) return true;
+    if (net.isIPv4(h)) {
+        const p = h.split('.').map(Number);
+        if (p.some((n) => !(n >= 0 && n <= 255))) return true;
+        const [a, b] = p;
+        if (a === 0 || a === 10 || a === 127) return true;              // 本网/私网/回环
+        if (a === 169 && b === 254) return true;                        // 链路本地 + 云元数据
+        if (a === 172 && b >= 16 && b <= 31) return true;               // 172.16/12
+        if (a === 192 && b === 168) return true;                        // 192.168/16
+        if (a === 100 && b >= 64 && b <= 127) return true;              // CGNAT
+        if (a === 198 && (b === 18 || b === 19)) return true;           // 基准测试网段
+        if (a >= 224) return true;                                      // 组播/保留
+        return false;
+    }
+    if (net.isIPv6(h)) {
+        if (h === '::1' || h === '::') return true;
+        if (/^f[cd]/.test(h)) return true;                              // ULA
+        if (/^fe[89ab]/.test(h)) return true;                           // 链路本地
+        if (h.startsWith('64:ff9b:')) return true;                      // NAT64
+        return false;
+    }
+    return false;
+}
+function badHostName(h) {
+    const s = String(h || '');
+    return s === 'localhost' || s.endsWith('.localhost') || s.endsWith('.local') || s.endsWith('.internal')
+        || s === 'metadata' || s === 'metadata.google.internal' || s === 'instance-data';
+}
+async function isInternalUrl(u) {
+    let x;
+    try { x = new URL(String(u || '')); } catch { return true; }
+    if (!/^https?:$/.test(x.protocol)) return true;
+    const raw = x.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    if (!raw) return true;
+    if (badHostName(raw)) return true;
+    const h = unmapV4(raw);
+    if (net.isIP(h)) return ipIsInternal(h);
+    // 域名：解析一次再判（挡住 localtest.me、同网络服务名这类解析到内网的域名）。解不出来也拒。
+    try {
+        const addrs = await dns.promises.lookup(h, { all: true, verbatim: true });
+        if (!addrs.length) return true;
+        return addrs.some((a) => ipIsInternal(a.address));
+    } catch { return true; }
+}
+// web_search 的 api_key_env 白名单：专用变量随便用；若是某家上游的 key 变量，必须与 base_url 同源
+function wsKeyEnvAllowed(env, baseUrl) {
+    const e = String(env || '').trim();
+    if (!e) return true;
+    const owner = Object.values(CFG.providers || {}).find((p) => p && p.api_key_env === e);
+    if (!owner) return true;
+    let h1 = '', h2 = '';
+    try { h1 = new URL(String(baseUrl || '')).host; } catch { }
+    try { h2 = new URL(String(owner.base_url || '')).host; } catch { }
+    return !!h1 && h1 === h2;
+}
+// ---------------- CSRF 防护（面板写接口） ----------------
+// 为什么必须有：面板域名开着 Basic 后备，浏览器会把 Basic 凭据自动附到任何发往该源的请求上。
+// 恶意网页能用 form / text-plain / fetch(no-cors) 这类「CORS 简单请求」盲打 /api/config/*（关网关、删 key、改路由）。
+// 挡法：写请求必须是「同源 + application/json」——简单请求带不了 application/json（设了会触发预检，
+//       而本服务不返回 CORS 头，预检必失败），所以这一条就能挡住浏览器侧的 CSRF。
+function csrfOk(req) {
+    const m = String(req.method || 'GET').toUpperCase();
+    if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return true;
+    // ① 浏览器给的来源信号：有 Origin 就比 host；否则看 Sec-Fetch-Site
+    const origin = String(req.headers.origin || '');
+    const host = String(req.headers.host || '');
+    if (origin && origin !== 'null') {
+        let oh = '';
+        try { oh = new URL(origin).host; } catch { }
+        if (!oh || oh !== host) return false;
+    } else {
+        const sfs = String(req.headers['sec-fetch-site'] || '');
+        if (sfs && sfs !== 'same-origin' && sfs !== 'none') return false;
+    }
+    // ② 有请求体就必须是 JSON（form-urlencoded / multipart / text-plain 一律拒）
+    const clen = Number(req.headers['content-length'] || 0);
+    const ct = String(req.headers['content-type'] || '').toLowerCase();
+    if ((clen > 0 || ct) && !ct.startsWith('application/json')) return false;
+    return true;
 }
 // 面板身份：Basic（管理员）、会话 token、或「无 owner 的旧网关 key」（仅本机直连，管理员兼容）。
 // 有 owner 的网关 key 只用于 /v1/*，不能读面板 API（否则用户生成的 key 能看全量配置）。
@@ -200,7 +396,11 @@ function identityOf(req, dashOk) {
     const k = KEYS.get(a.key) || {};
     const owner = k.owner ? String(k.owner) : '';
     if (!owner) {
-        if (!keyPanelAllowed(req)) return null;
+        if (!keyPanelAllowed(req)) {
+            // 远程拿无主 key 想进面板：拒掉并留痕（排查"为什么本机能用、别处不能用"看这条）
+            log('PANEL DENY', 'ownerless key', a.name, 'from', String((req.socket && req.socket.remoteAddress) || '?'));
+            return null;
+        }
         return adminId('key');
     }
     const u = panelUser(owner);
@@ -344,10 +544,33 @@ function countOut(res, holder) {           // 统计真正写给客户端的字�
 // 影响面：上游数据正常到达时只多几行心跳注释；GATEWAY_HOLD_MS=0 可整关。
 const HOLD_MS = Number(process.env.GATEWAY_HOLD_MS ?? 90000);
 const KA_MS = Number(process.env.GATEWAY_KA_MS ?? 10000);
+// 上游空闲看门狗：连续 UP_IDLE_MS 收不到任何字节就 abort（防「TCP 连上但上游不回数据」永久挂起）。
+// 默认 10 分钟（实测有 270–304s 的慢首字节，别设太短）；0 ＝关闭。
+// 注意两点（复审踩过）：
+//   ① abort() 不带 reason —— 带自定义 reason 时 fetch 抛的是 Error 而不是 AbortError，上层分支认不出来；
+//   ② 通过 getAc 取「当前」控制器 —— 每次重试会换新的 AbortController，闭包必须跟着换。
+const UP_IDLE_MS = Math.max(0, Number(process.env.GATEWAY_UP_IDLE_MS ?? 600000));
+function upIdleGuard(getAc) {
+    let t = null, stopped = false, fired = false;
+    const arm = () => {
+        if (stopped || !(UP_IDLE_MS > 0)) return;
+        clearTimeout(t);
+        t = setTimeout(() => {
+            fired = true;
+            const a = typeof getAc === 'function' ? getAc() : getAc;
+            if (a) { try { a.abort(); } catch { } }
+        }, UP_IDLE_MS);
+        if (t.unref) t.unref();
+    };
+    const stop = () => { stopped = true; clearTimeout(t); t = null; };
+    const reset = () => { fired = false; };
+    return { arm, stop, reset, get fired() { return fired; } };
+}
 function startFirstByteHold(res, streaming) {
     const h = { sent: false, ka: null, timer: null, writing: false, done: false };
     const stopKa = () => { if (h.ka) { clearInterval(h.ka); h.ka = null; } };
     h.stop = () => { h.done = true; if (h.timer) { clearTimeout(h.timer); h.timer = null; } stopKa(); };
+    res.on('close', () => h.stop());     // 兜底：响应一关就收掉定时器/心跳，别让它挂在已死的连接上
     h.open = () => {           // 客户端流已打开 → 起心跳；第一块真实数据写出即自动收工
         if (h.ka || h.done || !streaming || !(KA_MS > 0)) return;
         const w = res.write.bind(res);
@@ -855,13 +1078,22 @@ function removeEnvVar(name) {
     delete process.env[name];
 }
 function setEnvVar(name, value) {
+    const n = String(name || '').trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) throw new Error('环境变量名不合法: ' + n);
+    const v = String(value == null ? '' : value);
+    // 值里带换行会被 loadEnvFile 当成新的一行 → 等于往 .env 注入任意变量，必须拒
+    if (/[\r\n]/.test(v)) throw new Error('环境变量值不能包含换行符');
     let lines = [];
     try { lines = fs.readFileSync(ENV_PATH, 'utf8').split('\n').filter((l) => l.trim()); } catch { }
-    const out = lines.filter((l) => !l.startsWith(name + '='));
-    out.push(`${name}=${value}`);
-    fs.writeFileSync(ENV_PATH, out.join('\n') + '\n');
-    try { fs.chmodSync(ENV_PATH, 0o600); } catch { }
-    process.env[name] = value;
+    const out = lines.filter((l) => !l.startsWith(n + '='));
+    out.push(`${n}=${v}`);
+    // 原子写：先以 600 建 tmp 再 rename。原来先 writeFileSync 再 chmod，首次创建时会按 umask 落地，
+    // 中间有一个同机其它用户可读的窗口。
+    const tmp = ENV_PATH + '.tmp';
+    fs.writeFileSync(tmp, out.join('\n') + '\n', { mode: 0o600 });
+    try { fs.chmodSync(tmp, 0o600); } catch { }
+    fs.renameSync(tmp, ENV_PATH);
+    process.env[n] = v;
 }
 function authenticate(req) {
     const h = req.headers['authorization'] || '';
@@ -908,8 +1140,10 @@ function allowedEntities(allow) {
 function modelPoolOf(model) {
     const m = String(model || '');
     for (const r of CFG.routes || []) {
+        const re = reOf(r.model_regex);
+        if (!re) continue;
         let hit = false;
-        try { hit = new RegExp(r.model_regex).test(m); } catch { continue; }
+        try { hit = re.test(m); } catch { continue; }
         if (!hit) continue;
         if (r.pool) { if ((CFG.pools || {})[r.pool]) return { pool: r.pool, provider: null }; continue; }
         if ((CFG.providers || {})[r.provider]) return { pool: poolForProvider(r.provider), provider: r.provider };
@@ -1272,9 +1506,22 @@ function poolPlan(poolName, r, upstreamModel, ctx) {
     return { name: poolName, def, strategy, order };
 }
 
+// 路由正则缓存：每个请求都 new RegExp 既慢、又让一条写错的正则把全部请求打成 500。
+// 编译失败的正则缓存为 null（该条路由永不匹配），并在日志里留一条，改配置后由 CFG 重载自然生效。
+const RE_CACHE = new Map();          // pattern -> RegExp | null
+function reOf(pat) {
+    const p = String(pat || '');
+    if (RE_CACHE.has(p)) return RE_CACHE.get(p);
+    let re = null;
+    try { re = new RegExp(p); } catch (e) { log('ROUTE REGEX BAD', JSON.stringify(p), e.message); }
+    if (RE_CACHE.size > 500) RE_CACHE.clear();
+    RE_CACHE.set(p, re);
+    return re;
+}
 function routeFor(model, ctx) {
     for (const r of CFG.routes || []) {
-        if (!new RegExp(r.model_regex).test(model)) continue;
+        const re = reOf(r.model_regex);
+        if (!re || !re.test(model)) continue;
         const bare = r.strip && model.startsWith(r.strip) ? model.slice(r.strip.length) : model;
         const upstreamModel = (r.model_map || {})[model] || bare;
         if (r.pool) {                                   // 上游池：本次挑一个成员，其余作为失败候选
@@ -1400,7 +1647,8 @@ function resolveFormat(rt) {
     const pf = providerFormatOf(rt.provider);
     if (pf) return pf;                                                 // 供应商默认
     if (FORMAT_OVERRIDES[key]) return FORMAT_OVERRIDES[key];           // 探测记忆
-    if (rt.responses_regex && new RegExp(rt.responses_regex).test(rt.upstream_model)) return 'responses';
+    const rre = rt.responses_regex ? reOf(rt.responses_regex) : null;
+    if (rre && rre.test(rt.upstream_model)) return 'responses';
     return 'chat';
 }
 // 每个对外模型 id 的协议 + 该协议是否来自“真探测”（FORMAT_OVERRIDES 是首请求试出来的；其它来源＝按规则/配置推断）
@@ -1533,7 +1781,7 @@ async function probeModelEfforts(id, opts = {}) {
     const fmt = resolveFormat(rt);
     const style = p.thinking_style || 'none';
     const levels = normEfforts(opts.levels && opts.levels.length ? opts.levels : EFFORT_LADDER);
-    const base = upstreamBase(p, fmt);
+    const base = upstreamBase(p, fmt, rt.upstream_model);
     const out = {
         id: String(id), provider: rt.provider, upstream_model: rt.upstream_model,
         format: fmt, thinking_style: style, levels: [], rejected: {}, saw_reasoning: {},
@@ -1809,7 +2057,7 @@ function toolNameGuard(provider, body) {
 // https://api.example.com/anthropic/v1/messages，而 base_url 是 .../v1（拼出来是 /v1/messages → 404）。
 // 配置形如 "format_bases": { "messages": "https://api.example.com/anthropic/v1" }；
 // 没配就走 base_url，行为与改动前逐字一致。
-function upstreamBase(p, format) {
+function upstreamBase(p, format, model) {
     const b = p && p.format_bases && p.format_bases[format];
     return String(b || (p && p.base_url) || '').replace(/\/+$/, '');
 }
@@ -1822,15 +2070,15 @@ function buildUpstream(rt, format, body, sessionId, ctx, ua, clientSid) {
         let reasonInj = 0;
         const payload = chatToResponses(body, { echoReason: !!rt.providerCfg.reasoning_echo, provider: rt.provider, onInject: (n) => { reasonInj += n; } });
         if (ctx) ctx.reasonInj = reasonInj;
-        return { url: upstreamBase(rt.providerCfg, 'responses') + '/responses', payload: { ...payload, model: rt.upstream_model }, headers };
+        return { url: upstreamBase(rt.providerCfg, 'responses', rt.upstream_model) + '/responses', payload: { ...payload, model: rt.upstream_model }, headers };
     }
     if (format === 'messages') {
-        return { url: upstreamBase(rt.providerCfg, 'messages') + '/messages', payload: chatToMessages(body, rt.upstream_model, rt.providerCfg), headers };
+        return { url: upstreamBase(rt.providerCfg, 'messages', rt.upstream_model) + '/messages', payload: chatToMessages(body, rt.upstream_model, rt.providerCfg), headers };
     }
     if (format === 'gemini') {
         // 原生 Google 端点：模型名在路径里，不在 body 里
         const path = `/models/${encodeURIComponent(rt.upstream_model)}` + (body.stream ? ':streamGenerateContent?alt=sse' : ':generateContent');
-        return { url: upstreamBase(rt.providerCfg, 'gemini') + path, payload: chatToGemini(body, rt.upstream_model, rt.providerCfg), headers };
+        return { url: upstreamBase(rt.providerCfg, 'gemini', rt.upstream_model) + path, payload: chatToGemini(body, rt.upstream_model, rt.providerCfg), headers };
     }
     const payload = { ...body, model: rt.upstream_model };
     stripBodyFields(payload, rt.providerCfg.strip_body_fields, rt.provider);
@@ -1839,7 +2087,7 @@ function buildUpstream(rt, format, body, sessionId, ctx, ua, clientSid) {
     // responses / messages 两条路各自已把 developer 处理掉了，这里只管 chat。
     if (Array.isArray(payload.messages)) payload.messages = payload.messages.map((m) => (m && m.role === 'developer') ? { ...m, role: 'system' } : m);
     if (body.stream) payload.stream_options = { include_usage: true, ...(body.stream_options || {}) };
-    return { url: upstreamBase(rt.providerCfg, 'chat') + '/chat/completions', payload, headers };
+    return { url: upstreamBase(rt.providerCfg, 'chat', rt.upstream_model) + '/chat/completions', payload, headers };
 }
 
 // ---------------- usage 换算 ----------------
@@ -2467,6 +2715,7 @@ async function pumpGemini(upRes, ctx, sink) {          // :streamGenerateContent
         }
     };
     for (; ;) {
+        if (ctx.idle) ctx.idle.arm();
         const { done, value } = await reader.read(); if (done) break;
         if (value) ctx.up_res_bytes = (ctx.up_res_bytes || 0) + value.length;
         buf += dec.decode(value, { stream: true });
@@ -2742,6 +2991,7 @@ async function pumpResponses(upRes, ctx, sink) {   // responses SSE → sink（s
     const dec = new TextDecoder();
     let buf = '';
     for (; ;) {
+        if (ctx.idle) ctx.idle.arm();
         const { done, value } = await reader.read();
         if (done) break;
         if (value) ctx.up_res_bytes = (ctx.up_res_bytes || 0) + value.length;
@@ -2758,6 +3008,7 @@ async function pumpMessages(upRes, ctx, sink) {    // Anthropic messages SSE →
     const reader = upRes.body.getReader(); const dec = new TextDecoder();
     let buf = '', cur = null, stopReason = 'end_turn';
     for (; ;) {
+        if (ctx.idle) ctx.idle.arm();
         const { done, value } = await reader.read(); if (done) break;
         if (value) ctx.up_res_bytes = (ctx.up_res_bytes || 0) + value.length;
         buf += dec.decode(value, { stream: true });
@@ -2817,6 +3068,7 @@ async function pumpChat(upRes, ctx, sink) {        // chat SSE → sink（转换
         if (ch.finish_reason) fr = ch.finish_reason;
     };
     for (; ;) {
+        if (ctx.idle) ctx.idle.arm();
         const { done, value } = await reader.read(); if (done) break;
         if (value) ctx.up_res_bytes = (ctx.up_res_bytes || 0) + value.length;
         buf += dec.decode(value, { stream: true });
@@ -2993,10 +3245,14 @@ async function serveChatPipeline(req, res, opts) {
     if (ws) ctx.ws = ws;
     let hitRt = rt;                                   // 实际命中的成员（池模式下可能已换过，记录/日志都用它）
     const trail = [];                                 // 池模式下每个成员的失败原因（全挂时回给客户端）
+    let clientGone = false;                           // 客户端真断开（区别于看门狗超时）
     try {
-        const ac = new AbortController();
-        const onClose = () => { if (!res.writableEnded) { try { ac.abort(); } catch { } } };
-        req.on('close', onClose);
+        let ac = new AbortController();
+        const idle = upIdleGuard(() => ac); ctx.idle = idle;      // M9：空闲看门狗（上游不回数据不再永久挂起）
+        // H1：断开监听必须挂 res 的 close（客户端真断开），并保持到流结束。
+        // req 的 close 在 Node≥16 是「请求体读完」就触发——正常和断开都靠不住，等于没有监听。
+        const onClose = () => { idle.stop(); if (!res.writableEnded) { clientGone = true; try { ac.abort(); } catch { } } };
+        res.on('close', onClose);
         let upRes, lastTxt = '', netErr = null;
         // 候选顺序：池模式下是「策略选中的成员 + 失败可换的其它成员」，每人对自己的协议候选各试一遍。
         const plan = rt.poolPlan || null;
@@ -3017,10 +3273,21 @@ async function serveChatPipeline(req, res, opts) {
                     const payloadStr = jdump(payload);
                     ctx.up_len = payloadStr.length;
                     ctx.pre4k = preHash(payloadStr, 4096); ctx.pre16k = preHash(payloadStr, 16384); ctx.pre64k = preHash(payloadStr, 65536);
+                    // 上一次尝试被看门狗掐掉 → 换一个新的 AbortController（已 abort 的 signal 复用会被立即拒绝）
+                    if (!clientGone && ac.signal.aborted) { ac = new AbortController(); idle.reset(); }
+                    idle.arm();                                   // 等响应头也算空闲
                     try {
                         upRes = await fetch(url, { method: 'POST', headers, body: payloadStr, signal: ac.signal });
                     } catch (fe) {
-                        if (fe.name === 'AbortError') throw fe;       // 客户端断开：不重试
+                        if (fe.name === 'AbortError') {
+                            if (clientGone) throw fe;             // 客户端断开：不重试
+                            // 看门狗超时：按上游故障处理，允许换协议/换成员（原来是直接 throw，等于把超时记成客户端断开）
+                            upRes = null; status = 504; lastTxt = 'upstream idle timeout';
+                            noteAttempt(trail, aRt.provider, 0, 'idle timeout');
+                            log('UPSTREAM IDLE TIMEOUT', aRt.provider, format, aRt.upstream_model);
+                            switchMember = ai < attempts.length - 1;
+                            break;
+                        }
                         netErr = fe; upRes = null; status = 0; lastTxt = 'fetch failed: ' + fe.message;
                         noteAttempt(trail, aRt.provider, 0, fe.message);
                         log('UPSTREAM FETCH FAIL', aRt.provider, format, aRt.upstream_model, fe.message);
@@ -3047,11 +3314,11 @@ async function serveChatPipeline(req, res, opts) {
             if (!switchMember) break;                 // 不可重试 → 就地按错误收尾
             log('POOL FAILOVER', plan.name, aRt.provider, '->', attempts[ai + 1].provider, `(${status || 'network'})`);
         }
-        req.off('close', onClose);
         if (upRes && upRes.ok) { const fk = hitRt.provider + '|' + hitRt.upstream_model; if ((!hitRt.format || hitRt.format === 'auto') && FORMAT_OVERRIDES[fk] !== format) { FORMAT_OVERRIDES[fk] = format; saveOverrides(); } }
         if (!upRes || !upRes.ok) {
             const pFail = plan ? poolFailBody(plan, trail, lastTxt) : null;
-            const outStatus = plan ? poolFailStatus(trail) : (upRes ? status : 502);
+            // 看门狗超时（status=504）要如实回 504；普通网络错误保持原来的 502
+            const outStatus = plan ? poolFailStatus(trail) : (upRes ? status : (status === 504 ? 504 : 502));
             let parsed = null; try { parsed = JSON.parse(lastTxt); } catch { }
             log('UPSTREAM ERROR', outStatus, hitRt.provider, format, model, String(pFail ? pFail.hint : lastTxt).slice(0, 300));
             if (hold.sent) {   // 保活已提前发出 200 响应头 → 改发 SSE 错误事件收尾
@@ -3085,15 +3352,38 @@ async function serveChatPipeline(req, res, opts) {
                 if (!res.headersSent) res.writeHead(200, SSE_HEADERS);
                 if (clientProto === 'chat' && !ws) {                 // chat→chat 且没开代理：原样字节透传（保持既有行为）
                     const reader = upRes.body.getReader(); const dec = new TextDecoder(); let buf = '', ttft = 0;
+                    // 只处理「完整的行」，尾巴留到下一块再拼。
+                    // 原来 buf 只增不清、每块把全文重扫一遍 → O(n²)：实测 2MB 的流要烧 37 秒纯 CPU，
+                    // 而正则匹配是同步的，这期间整个事件循环被按住（所有人的请求都停摆）。
+                    const drainLines = (final) => {
+                        const cut = final ? buf.length : buf.lastIndexOf('\n');
+                        if (cut < 0) return;
+                        let seg = buf.slice(0, final ? cut : cut + 1);
+                        if (final && !seg.endsWith('\n')) seg += '\n';   // 上游最后一块可能没有换行，补上正则才吃得到
+                        buf = final ? '' : buf.slice(cut + 1);
+                        for (const mm of seg.matchAll(/data:\s*(\{.*?\})\s*\n/g)) {
+                            try { const j = JSON.parse(mm[1]); if (j.usage) ctx.usage = usageFromChat(j.usage); if (j.choices?.[0]?.delta?.tool_calls) ctx.hasTool = true; } catch { }
+                        }
+                    };
+                    // 背压：慢客户端时别把整个响应堆在内存里
+                    const waitDrain = () => new Promise((done) => {
+                        const go = () => { res.off('drain', go); res.off('close', go); done(); };
+                        res.once('drain', go); res.once('close', go);
+                    });
                     for (; ;) {
+                        if (ctx.idle) ctx.idle.arm();
+                        if (clientGone || res.destroyed || !res.writable) { try { await reader.cancel(); } catch { } break; }  // 客户端走了：别再读上游
                         const { done, value } = await reader.read(); if (done) break;
                         if (value) ctx.up_res_bytes = (ctx.up_res_bytes || 0) + value.length;
                         if (!ttft) ttft = Date.now() - t0;
-                        const text = dec.decode(value, { stream: true });
-                        buf += text;
-                        for (const mm of [...buf.matchAll(/data:\s*(\{.*?\})\s*\n/g)]) { try { const j = JSON.parse(mm[1]); if (j.usage) ctx.usage = usageFromChat(j.usage); if (j.choices?.[0]?.delta?.tool_calls) ctx.hasTool = true; } catch { } }
-                        res.write(value);
+                        buf += dec.decode(value, { stream: true });
+                        drainLines(false);
+                        if (value && !res.write(value)) {
+                            await waitDrain();
+                            if (clientGone || res.destroyed) { try { await reader.cancel(); } catch { } break; }
+                        }
                     }
+                    drainLines(true);
                     res.end(); ctx.ttft = ttft; piped = true;
                 } else {
                     await pumpChat(upRes, ctx, sink);
@@ -3125,6 +3415,7 @@ async function serveChatPipeline(req, res, opts) {
             const nxt = buildUpstream(hitRt, format, chatBody, auth.session_id, ctx, auth.user_agent, cSid);
             capture('upstream_req', { candidate: format, cproto: clientProto, url: nxt.url, key: auth.name, model, upstream_model: hitRt.upstream_model, provider: hitRt.provider, payload: nxt.payload, ws_round: rounds });
             log('WS ROUND', rounds, clientProto + '->' + format, hitRt.upstream_model);
+            idle.arm();
             upRes = await fetch(nxt.url, { method: 'POST', headers: nxt.headers, body: jdump(nxt.payload), signal: ac.signal });
             if (!upRes.ok) {
                 const t = await upRes.text();
@@ -3145,15 +3436,34 @@ async function serveChatPipeline(req, res, opts) {
         }
         if (!body.stream && roundChat) renderJson(res, clientProto, roundChat, ctx);   // 非流式：一律在这里渲染（ws 关掉也必须渲）
         if (body.stream && !piped) {
-            if (ctx.upstreamError && ctx.ttft == null) { log('UPSTREAM STREAM ERROR', ctx.upstreamError); sink.error(ctx.upstreamError); }
+            if (ctx.upstreamError) {
+                // 以前只在「一个字节都没出」时才告知客户端；流到一半上游报错会被当成正常完成收尾，
+                // 客户端分不清「完整」和「被截断」，库里也查不出原因（M10）。
+                log('UPSTREAM STREAM ERROR', ctx.ttft == null ? '未出数据' : '中途截断', String(ctx.upstreamError).slice(0, 300));
+                try { sink.error(ctx.upstreamError); } catch { }
+                status = 502;
+                base.error = String(ctx.upstreamError).slice(0, 300);
+                base.usage_src = 'error';
+                base.last_evt = 'error';
+            }
             sink.finalize(finishOf(ctx), ctx.usage);
             if (!res.writableEnded) res.end();
         }
         record({ ...base, status, ms: Date.now() - t0, provider: hitRt.provider, upstream_model: hitRt.upstream_model, format, usage: ctx.usage, ttft_ms: ctx.ttft || 0, has_tool: ctx.hasTool, reason_inj: ctx.reasonInj || 0, up_len: ctx.up_len, up_res_bytes: ctx.up_res_bytes || 0, pre4k: ctx.pre4k, pre16k: ctx.pre16k, pre64k: ctx.pre64k });
-        log('OK', clientProto + '->' + format, hitRt.upstream_model, `in=${ctx.usage.in || 0} out=${ctx.usage.out || 0} cached=${ctx.usage.cached || 0}`, `${Date.now() - t0}ms`);
+        log(status >= 400 ? 'DONE(stream truncated)' : 'OK', clientProto + '->' + format, hitRt.upstream_model, `in=${ctx.usage.in || 0} out=${ctx.usage.out || 0} cached=${ctx.usage.cached || 0}`, `${Date.now() - t0}ms`);
     } catch (e) {
         hold.stop();
         if (e.name === 'AbortError') {
+            // 区分两种 AbortError：客户端断开（499） vs 看门狗超时（504）
+            if (!clientGone && ctx.idle && ctx.idle.fired) {
+                log('UPSTREAM IDLE TIMEOUT', model, `${Date.now() - t0}ms`);
+                record({ ...base, status: 504, ms: Date.now() - t0, provider: hitRt.provider, error: 'upstream idle timeout' });
+                try {
+                    if (res.headersSent) { sink.error('上游长时间无数据，网关已超时'); sink.finalize('stop', {}); res.end(); }
+                    else sendJson(res, 504, { error: { message: '上游长时间无数据（网关超时）', type: 'upstream_timeout' } });
+                } catch { }
+                return;
+            }
             log('CLIENT ABORT', model, `${Date.now() - t0}ms`);
             record({ ...base, status: 499, ms: Date.now() - t0, provider: hitRt.provider, error: 'client aborted' });
             try { res.end(); } catch { }
@@ -3167,15 +3477,21 @@ async function serveChatPipeline(req, res, opts) {
 }
 
 // ---------------- 拉取上游模型列表 ----------------
-async function fetchModelsFrom(base, key, extra = {}) {
+// echoBody=true 才把上游错误正文带回消息里（只给管理员路径用；面板用户路径必须 false，否则等于内网探测回显）
+// noRedirect=true 时不跟随 302（面板路径用：否则可以把 base_url 指到自己的公网服务器、302 到内网绕过字面量检查）
+async function fetchModelsFrom(base, key, extra = {}, echoBody = false, noRedirect = false) {
     base = String(base || '').replace(/\/+$/, '');
     const attempt = async (mode) => {
         const headers = { 'Accept': 'application/json', ...extra };
         if (mode === 'bearer') headers['Authorization'] = 'Bearer ' + key;
         else headers['x-api-key'] = key;
-        const r = await fetch(base + '/models', { headers, signal: AbortSignal.timeout(20000) });
+        const r = await fetch(base + '/models', {
+            headers, signal: AbortSignal.timeout(20000),
+            redirect: noRedirect ? 'manual' : 'follow',
+        });
+        if (noRedirect && r.status >= 300 && r.status < 400) return { ok: false, status: r.status, text: '上游返回重定向，已拒绝跟随' };
         const txt = await r.text();
-        if (!r.ok) return { ok: false, status: r.status, text: txt.slice(0, 200) };
+        if (!r.ok) return { ok: false, status: r.status, text: echoBody ? txt.slice(0, 200) : '' };
         let j;
         try { j = JSON.parse(txt); } catch { return { ok: false, status: r.status, text: '返回不是 JSON' }; }
         const arr = Array.isArray(j) ? j : (j.data || j.models || j.result || j.items || []);
@@ -3199,7 +3515,7 @@ async function fetchProviderModels(b) {
     const extra = {};
     if (prov.user_agent) extra['User-Agent'] = prov.user_agent;
     for (const [k, v] of Object.entries(prov.extra_headers || {})) extra[k] = v;
-    const ids = await fetchModelsFrom(base, key, extra);
+    const ids = await fetchModelsFrom(base, key, extra, true);
     const have = new Set((CFG.models || []).filter((m) => m.startsWith(prefix + '/')));
     return {
         provider: route.provider, prefix, endpoint: base + '/models', count: ids.length,
@@ -3392,6 +3708,7 @@ function applyConfigChange(p, b, who) {
         '/api/config/model', '/api/config/models/bulk', '/api/config/model/delete',
         '/api/config/model/efforts', '/api/config/provider/efforts',
         '/api/config/toggle', '/api/config/toggle_capture', '/api/config/reload',
+        '/api/config/web_search',
         '/api/config/user', '/api/config/user/delete',
     ]);
     if (!isAdmin && ADMIN_ONLY.has(p)) throw new Error('只有管理员能执行该操作');
@@ -3821,7 +4138,11 @@ function applyConfigChange(p, b, who) {
     }
     if (p === '/api/config/web_search') {            // web_search 代理：开关与参数（改完热生效）
         const w = cfg.web_search || {};
-        for (const k of ['enabled', 'mode', 'inject', 'base_url', 'api_key_env', 'tool_name', 'count', 'need_content', 'max_rounds', 'max_calls', 'description']) {
+        // 安全：api_key_env 不许指向别家上游的密钥变量，否则等于把别人的 key 送到自己指定的服务器
+        const nextBase = 'base_url' in b ? String(b.base_url || '') : String(w.base_url || '');
+        const nextEnv = 'api_key_env' in b ? String(b.api_key_env || '') : String(w.api_key_env || '');
+        if (!wsKeyEnvAllowed(nextEnv, nextBase)) throw new Error('api_key_env 只能填专用变量，或与 base_url 同源的那家上游的 key 变量');
+        for (const k of ['enabled', 'mode', 'inject', 'base_url', 'api_key_env', 'tool_name', 'count', 'need_content', 'max_rounds', 'max_calls', 'description', 'expose_tools_api']) {
             if (!(k in b)) continue;
             if (b[k] === null || b[k] === '') delete w[k]; else w[k] = b[k];
         }
@@ -3920,19 +4241,24 @@ function applyConfigChange(p, b, who) {
         const role = b.role === 'admin' ? 'admin' : 'user';
         if (name === me.name && role !== 'admin') throw new Error('不能把自己降成普通用户');
         const pw = String(b.password || '');
-        if (pw && pw.length < 6) throw new Error('密码至少 6 位');
+        if (pw && pw.length < 8) throw new Error('密码至少 8 位');
         cfg.users = cfg.users || {};
         const existed = cfg.users[name] || panelUser(name);
         if (!existed && !pw) throw new Error('新建用户必须设密码');
-        const salt = (existed && existed.salt) || crypto.randomBytes(8).toString('hex');
         cfg.users[name] = {
-            role, salt,
-            password_sha256: pw ? hashPw(salt, pw) : existed.password_sha256,
+            role,
+            password_sha256: pw ? pwHashScrypt(pw) : existed.password_sha256,
             created_at: (existed && existed.created_at) || Date.now(),
         };
         saveConfig(cfg); reloadConfig();
+        // M6：改密 / 改角色后，该账号的存量会话立即作废（保留操作者自己这条，免得把自己踢下线）
+        let dropped = 0;
+        if (pw || (existed && existed.role !== role)) {
+            dropped = dropSessionsOf(name, me.token || '');
+            if (dropped) log('SESSIONS DROPPED', name, dropped, pw ? '(password)' : '(role)');
+        }
         log('CONFIG user', name, role, existed ? 'update' : 'create');
-        return { user: name, role, created: !existed };
+        return { user: name, role, created: !existed, sessions_dropped: dropped };
     }
     if (p === '/api/config/user/delete') {
         const name = String(b.name || '').trim();
@@ -4268,19 +4594,64 @@ function convFingerprint(body) {   // 会话指纹：系统提示 + 第一条 us
     } catch { return null; }
 }
 function clientIp(req) {
-    const h = req.headers || {};
-    const cf = String(h['cf-connecting-ip'] || '').trim();     // CF 隧道下这是真实客户端 IP
-    if (cf) return cf;
-    const xff = String(h['x-forwarded-for'] || '').split(',')[0].trim();
-    if (xff) return xff;
-    return String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+    // 真实客户端 IP：只有连接来自「本机」时才采信 CF/XFF 头（cloudflared 就跑在本机）。
+    // 其它来源（同网络容器、直连进来的进程）一律用 socket 地址——否则换一个假头就是一个新计数桶。
+    const sock = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+    const trusted = sock === '127.0.0.1' || sock === '::1' || (!!HOST_GW_IP && sock === HOST_GW_IP);
+    if (trusted) {
+        const h = req.headers || {};
+        const cf = String(h['cf-connecting-ip'] || '').trim();     // CF 隧道下这是真实客户端 IP
+        if (cf) return cf;
+        const xff = String(h['x-forwarded-for'] || '').split(',')[0].trim();
+        if (xff) return xff;
+    }
+    return sock;
 }
 function sendJson(res, code, obj) { const b = jdump(obj); res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }); res.end(b); }
-function readBody(req) { return new Promise((resolve, reject) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => resolve(Buffer.concat(c).toString('utf8'))); req.on('error', reject); }); }
+// 响应头已经发出去（保活提前开了流）时要收尾：只能补一个 SSE 错误事件再断，不能改状态码
+function endSse(res, obj) {
+    try { if (!res.writableEnded) { res.write('data: ' + jdump(obj) + '\n\n'); res.end(); } } catch { try { res.end(); } catch { } }
+}
+// 请求体硬上限：未登录接口（/api/auth/login）也走这里，防止无限缓冲打爆内存。
+// 默认 64MB（chat 带 base64 图片时请求体不小），可用 GATEWAY_MAX_BODY_MB 调整。
+const MAX_BODY = Math.max(1, Number(process.env.GATEWAY_MAX_BODY_MB || 64)) * 1024 * 1024;
+function readBody(req, max = MAX_BODY) {
+    return new Promise((resolve, reject) => {
+        const c = []; let n = 0, done = false;
+        const tooBig = () => {
+            if (done) return; done = true;
+            req.removeAllListeners('data'); req.removeAllListeners('end');
+            try { req.pause(); } catch { }                      // 停止继续收数据，避免客户端继续灌
+            const e = new Error('request body too large'); e.code = 'BODY_TOO_LARGE';
+            reject(e);
+        };
+        req.on('data', (d) => { if (done) return; n += d.length; if (n > max) return tooBig(); c.push(d); });
+        req.on('end', () => { if (done) return; done = true; resolve(Buffer.concat(c).toString('utf8')); });
+        req.on('error', (e) => { if (done) return; done = true; reject(e); });
+    });
+}
 
 const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const host = (req.headers.host || '').split(':')[0];
+    // 请求体硬上限：声明超限就直接 413，不进任何业务逻辑（挡未登录的无限缓冲 DoS）
+    const _clen = Number(req.headers['content-length'] || 0);
+    if (_clen > MAX_BODY) {
+        res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8', 'Connection': 'close' });
+        res.end(JSON.stringify({ error: { message: 'request body too large', type: 'invalid_request_error', code: 'body_too_large' } }));
+        try { req.destroy(); } catch { }
+        return;
+    }
+    // chunked 请求体没有 Content-Length，上面的预检看不到尺寸、会一路缓冲到上限。
+    // 面板接口一律要求带长度（浏览器和真实客户端都带），直接 411，堵掉匿名 chunked 灌内存。
+    if (url.pathname.startsWith('/api/') && /chunked/i.test(String(req.headers['transfer-encoding'] || ''))) {
+        return sendJson(res, 411, { error: { message: 'chunked 请求体不被接受（请带 Content-Length）', type: 'length_required' } });
+    }
+    // CSRF：面板写接口只接受「同源 + JSON」（Basic 后备下浏览器会自动带凭据，必须防盲打）
+    if (url.pathname.startsWith('/api/') && !csrfOk(req)) {
+        log('CSRF DENY', req.method, url.pathname, 'origin=' + (req.headers.origin || '-'), 'ct=' + (req.headers['content-type'] || '-'), 'sfs=' + (req.headers['sec-fetch-site'] || '-'));
+        return sendJson(res, 403, { error: { message: '跨站请求被拒绝：请从面板页面操作', type: 'csrf_blocked' } });
+    }
     // 面板域名单独密码（Basic；只对配置里的域名生效，本机/容器内不受影响）。
     // 有分用户登录后：Basic 仍可当管理员后备；不带 Basic 时不再弹浏览器密码框，改为页面内登录。
     const da = CFG.dashboard_auth || {};
@@ -4290,11 +4661,26 @@ const server = http.createServer(async (req, res) => {
     if (da.enabled && Array.isArray(da.hosts) && da.hosts.includes(host) && !panelLoggedOut) {
         const hdr = req.headers['authorization'] || '';
         if (hdr.startsWith('Basic ')) {
-            try {
-                const [u, p] = Buffer.from(hdr.slice(6), 'base64').toString('utf8').split(':');
-                const h = crypto.createHash('sha256').update((da.salt || '') + (p || '')).digest('hex');
-                dashOk = (u === da.username) && (h === da.password_sha256);
-            } catch { }
+            // scrypt 比 sha256 慢两个数量级，Basic 又是每个请求都校验 → 结果按凭据哈希缓存 5 分钟
+            const ck = crypto.createHash('sha256').update(hdr).digest('hex');
+            const hit = BASIC_CACHE.get(ck);
+            const bip = String((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
+            if (hit && hit.exp > Date.now()) dashOk = hit.ok;
+            else if (basicFailBlocked(bip)) dashOk = false;          // 失败太多次：不再算 scrypt，直接拒
+            else {
+                let ok = false, pw = '';
+                try {
+                    const [u, p] = Buffer.from(hdr.slice(6), 'base64').toString('utf8').split(':');
+                    pw = p || '';
+                    // 用户名与密码都比较 constant-time；密码支持 scrypt 与老 sha256 两种存储格式
+                    ok = pwEq(String(u || ''), String(da.username || '')) && checkPw(da.salt, da.password_sha256, pw);
+                } catch { }
+                dashOk = ok;
+                if (BASIC_CACHE.size > 200) BASIC_CACHE.clear();
+                BASIC_CACHE.set(ck, { ok, exp: Date.now() + BASIC_CACHE_TTL });
+                if (ok) { BASIC_FAILS.delete(bip); try { if (!isScryptHash(da.password_sha256)) upgradePwHash(da.username, pw); } catch (e) { log('PW UPGRADE FAIL', e.message); } }
+                else basicFail(bip);
+            }
         }
     }
     const who = url.pathname.startsWith('/api/') ? identityOf(req, dashOk) : null;   // 面板身份（/v1 数据面不算）
@@ -4310,16 +4696,25 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/auth/login') {
         if (req.method !== 'POST') return sendJson(res, 405, { error: { message: 'POST only' } });
         let b = {};
-        try { b = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: { message: 'invalid json' } }); }
+        try { b = JSON.parse((await readBody(req, 8 * 1024)) || '{}'); }
+        catch (e) {
+            if (e && e.code === 'BODY_TOO_LARGE') return sendJson(res, 413, { error: { message: '请求体过大' } });
+            return sendJson(res, 400, { error: { message: 'invalid json' } });
+        }
         const ip = clientIp(req);
         if (loginBlocked(ip)) return sendJson(res, 429, { error: { message: '尝试次数过多，请 10 分钟后再试' } });
         const u = panelUser(b.username);
-        if (!u || !pwEq(u.password_sha256, hashPw(u.salt, b.password || ''))) {
+        // 用户名不存在时也跑一遍 scrypt（结果丢弃），让「账号不存在」和「密码错」耗时一致，防枚举
+        const okPw = u ? checkPw(u.salt, u.password_sha256, b.password || '')
+            : (checkPw('', DUMMY_PW_HASH, b.password || ''), false);
+        if (!u || !okPw) {
             loginFailed(ip);
             log('LOGIN FAIL', String(b.username || ''), ip);
             return sendJson(res, 401, { error: { message: '用户名或密码错误' } });
         }
         LOGIN_FAILS.delete(ip);
+        // 老格式（单轮 sha256）密码：登录成功即静默升级为 scrypt
+        if (!isScryptHash(u.password_sha256)) { try { upgradePwHash(u.name, b.password || ''); } catch (e) { log('PW UPGRADE FAIL', e.message); } }
         const token = newSession(u.name);
         res.setHeader('Set-Cookie', 'gw_panel_logout=; Path=/; Max-Age=0; SameSite=Lax');   // 重新登录＝恢复 Basic 后备
         log('LOGIN', u.name, ip);
@@ -4340,8 +4735,9 @@ const server = http.createServer(async (req, res) => {
         try { b = JSON.parse((await readBody(req)) || '{}'); } catch { return sendJson(res, 400, { error: { message: 'invalid json' } }); }
         const base = String(b.base_url || '').trim().replace(/\/+$/, '');
         if (!/^https?:\/\//.test(base)) return sendJson(res, 400, { error: { message: 'base_url 必须以 http:// 或 https:// 开头' } });
+        if (await isInternalUrl(base)) return sendJson(res, 400, { error: { message: 'base_url 不允许指向本机 / 内网 / 云元数据地址（含解析后落在内网的域名）' } });
         try {
-            const ids = await fetchModelsFrom(base, String(b.api_key || '').trim(), {});
+            const ids = await fetchModelsFrom(base, String(b.api_key || '').trim(), {}, false, true);
             return sendJson(res, 200, { ok: true, models: ids });
         } catch (e) { return sendJson(res, 400, { error: { message: e.message } }); }
     }
@@ -4367,7 +4763,9 @@ const server = http.createServer(async (req, res) => {
         const entries = pool.map((m) => {
             const { protocol, detected } = modelProtocol(m);
             return { id: m, protocol, detected, efforts: effortsForModel(m) };
-        }).filter((e) => !only || e.protocol === only);
+        // 协议过滤把 gemini 模型也放行：上游协议=gemini 时网关会自动转成 Google 原生（见 /v1/responses|messages
+        // 入口的 gemForce），所以 responses/messages 客户端本来就能用它们，列表里不该把它们藏起来。
+        }).filter((e) => !only || e.protocol === only || e.protocol === 'gemini');
         if (isAnthropic) {                                    // Anthropic 规范的模型列表形状
             return sendJson(res, 200, {
                 data: entries.map((e) => ({
@@ -4403,6 +4801,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/official/usage') {          // 概览柱状图的「官方总量」叠加线（只服务 5h/本周/本月）
         if (!who || !who.panel) return sendJson(res, 401, { error: { message: 'Invalid API key', type: 'invalid_request_error', code: 'invalid_api_key' } });
+        if (!who.admin) return sendJson(res, 403, { error: { message: '只有管理员能查看官方用量' } });   // 读的是管理员账号的全量消耗
         const rg = String(url.searchParams.get('range') || '');
         const tz = Number(url.searchParams.get('tz'));
         try { return sendJson(res, 200, await officialUsage(rg, Number.isFinite(tz) ? tz : undefined)); }
@@ -4647,10 +5046,14 @@ const server = http.createServer(async (req, res) => {
         const gPlan = gRt.poolPlan || null;
         const gAttempts = gPlan ? gPlan.order : [gRt];
         capture('client_req', { cproto: 'gemini', ip: clientIp(req), key: gAuth.name, model: gModel, stream: gStream, body: gBody });
+        let clientGone = false;
+        const hold = startFirstByteHold(res, !!gStream);   // M12：直通路径原来完全没有首字节保活，慢上游经 CF 必 524
         try {
-            const ac = new AbortController();
-            const onClose = () => { if (!res.writableEnded) { try { ac.abort(); } catch { } } };
-            req.on('close', onClose);
+            let ac = new AbortController();
+            const idle = upIdleGuard(() => ac);
+            // H1：挂 res 的 close（客户端真断开），不再挂 req（Node≥16 语义不可靠）
+            const onClose = () => { idle.stop(); if (!res.writableEnded) { clientGone = true; try { ac.abort(); } catch { } } };
+            res.on('close', onClose);
             let up = null, upTxt = '', upStatus = 0, gLastRt = gRt;
             const gTrail = [];
             for (let i = 0; i < gAttempts.length; i++) {
@@ -4661,16 +5064,24 @@ const server = http.createServer(async (req, res) => {
                 // 客户端带来的生成参数原样保留，只把 model 从路径里的对外名换成上游名
                 const gPayload = { ...gBody };
                 stripBodyFields(gPayload, aRt.providerCfg.strip_body_fields, aRt.provider);
-                const gUrl = aRt.providerCfg.base_url + '/models/' + encodeURIComponent(aRt.upstream_model) + ':' + gemHit[2] + (gStream ? '?alt=sse' : '');
+                const gUrl = upstreamBase(aRt.providerCfg, 'gemini', aRt.upstream_model) + '/models/' + encodeURIComponent(aRt.upstream_model) + ':' + gemHit[2] + (gStream ? '?alt=sse' : '');
                 capture('upstream_req', { cproto: 'gemini', url: gUrl, provider: aRt.provider, key: gAuth.name, model: gModel, upstream_model: aRt.upstream_model, payload: gPayload });
+                if (!clientGone && ac.signal.aborted) { ac = new AbortController(); idle.reset(); }
+                idle.arm();
                 try {
                     up = await fetch(gUrl, { method: 'POST', headers: gHeaders, body: jdump(gPayload), signal: ac.signal });
                     upStatus = up.status;
                 } catch (fe) {
-                    if (fe.name === 'AbortError') throw fe;
-                    up = null; upStatus = 0; upTxt = 'fetch failed: ' + fe.message;
-                    noteAttempt(gTrail, aRt.provider, 0, fe.message);
-                    log('PASSTHROUGH FETCH FAIL', aRt.provider, 'gemini', gModel, fe.message);
+                    if (fe.name === 'AbortError' && clientGone) throw fe;      // 客户端断开
+                    if (fe.name === 'AbortError') {                             // 看门狗超时 → 当 504 上游故障，可换成员
+                        up = null; upStatus = 504; upTxt = 'upstream idle timeout';
+                        noteAttempt(gTrail, aRt.provider, 504, 'idle timeout');
+                        log('UPSTREAM IDLE TIMEOUT', aRt.provider, 'gemini', gModel);
+                    } else {
+                        up = null; upStatus = 0; upTxt = 'fetch failed: ' + fe.message;
+                        noteAttempt(gTrail, aRt.provider, 0, fe.message);
+                        log('PASSTHROUGH FETCH FAIL', aRt.provider, 'gemini', gModel, fe.message);
+                    }
                 }
                 capture('upstream_status', { cproto: 'gemini', provider: aRt.provider, status: up ? up.status : 0, ok: !!up && up.ok });
                 if (up && up.ok) { gRt = aRt; if (gPlan) { poolMark(gPlan.name, aRt.provider, true, gPlan.def); log('POOL HIT', gPlan.name, aRt.provider, gModel); } break; }
@@ -4682,7 +5093,6 @@ const server = http.createServer(async (req, res) => {
                 }
                 break;
             }
-            req.off('close', onClose);
             if (!up || !up.ok) {
                 const txt = upTxt;
                 const gFail = gPlan ? poolFailBody(gPlan, gTrail, txt) : null;
@@ -4690,12 +5100,16 @@ const server = http.createServer(async (req, res) => {
                 let parsed = null; try { parsed = JSON.parse(txt); } catch { }
                 log('PASSTHROUGH ERROR', outStatus, gLastRt.provider, 'gemini', gModel, String(gFail ? gFail.hint : txt).slice(0, 250));
                 record({ ...gBase, status: outStatus, ms: Date.now() - t0, provider: gLastRt.provider, upstream_model: gLastRt.upstream_model, format: 'gemini', error: String(gFail ? gFail.message : txt).slice(0, 500) });
-                return sendJson(res, outStatus, gFail
+                const gErrBody = gFail
                     ? { error: { code: outStatus, status: 'UNAVAILABLE', message: gFail.message, hint: gFail.hint, attempts: gFail.attempts } }
-                    : parsed?.error ? parsed : { error: { code: outStatus, message: txt.slice(0, 800) || 'upstream error' } });
+                    : parsed?.error ? parsed : { error: { code: outStatus, message: txt.slice(0, 800) || 'upstream error' } };
+                hold.stop();                          // 收掉保活定时器/心跳，避免它到点再往已结束的响应里写
+                if (hold.sent) return endSse(res, gErrBody);
+                return sendJson(res, outStatus, gErrBody);
             }
             if (gStream) {
                 if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+                hold.open();                       // 起心跳（第一块真实数据写出即自动停）
                 let buf = '', ttft = null, usage = {}, lastEvt = '';
                 const dec = new StringDecoder('utf8');
                 const reader = up.body.getReader();
@@ -4712,6 +5126,7 @@ const server = http.createServer(async (req, res) => {
                     }
                 };
                 for (; ;) {
+                    idle.arm();                     // 本路径的看门狗（此处没有 ctx，别照抄 chat 路径的 ctx.idle）
                     const { done, value } = await reader.read(); if (done) break;
                     if (!value) continue;
                     gBase.up_res_bytes += value.length;
@@ -4735,10 +5150,23 @@ const server = http.createServer(async (req, res) => {
                 log('OK', 'gemini->gemini(直通)', gRt.upstream_model, `in=${usage.in || 0} out=${usage.out || 0}`, `${Date.now() - t0}ms`);
             }
         } catch (e) {
+            // M13：直通路径原来把「客户端断开」和「看门狗超时」都记成 502 上游失败，口径与 chat 中枢不一致
+            if (e.name === 'AbortError') {
+                if (clientGone) {
+                    log('CLIENT ABORT', 'gemini', gModel, `${Date.now() - t0}ms`);
+                    record({ ...gBase, status: 499, ms: Date.now() - t0, provider: gRt.provider, format: 'gemini', error: 'client aborted' });
+                    try { res.end(); } catch { }
+                    return;
+                }
+                log('UPSTREAM IDLE TIMEOUT', 'gemini', gModel, `${Date.now() - t0}ms`);
+                record({ ...gBase, status: 504, ms: Date.now() - t0, provider: gRt.provider, format: 'gemini', error: 'upstream idle timeout' });
+                if (!res.headersSent) return sendJson(res, 504, { error: { code: 504, status: 'DEADLINE_EXCEEDED', message: '上游长时间无数据（网关超时）' } });
+                return endSse(res, { error: { code: 504, status: 'DEADLINE_EXCEEDED', message: '上游长时间无数据（网关超时）' } });
+            }
             log('PASSTHROUGH ERROR', 'gemini', gRt.provider, gModel, e.message);
             record({ ...gBase, status: 502, ms: Date.now() - t0, provider: gRt.provider, upstream_model: gRt.upstream_model, format: 'gemini', error: 'fetch failed: ' + e.message });
             if (!res.headersSent) return sendJson(res, 502, { error: { code: 502, status: 'UNAVAILABLE', message: 'upstream fetch failed: ' + e.message } });
-            try { res.end(); } catch { }
+            return endSse(res, { error: { code: 502, status: 'UNAVAILABLE', message: 'upstream fetch failed: ' + e.message } });
         }
         return;
     }
@@ -4752,7 +5180,8 @@ const server = http.createServer(async (req, res) => {
         const auth = authenticate(req);
         if (!auth) return sendJson(res, 401, { error: { message: 'Invalid API key', type: 'invalid_request_error', code: 'invalid_api_key' } });
         const wsc = CFG.web_search || {};
-        if (wsc.expose_tools_api === false) return sendJson(res, 404, { error: { message: 'tools api disabled', type: 'invalid_request_error' } });
+        // 默认关闭：只有显式 expose_tools_api: true 才开放（旧配置无该字段＝关闭）
+        if (wsc.expose_tools_api !== true) return sendJson(res, 404, { error: { message: 'tools api disabled', type: 'invalid_request_error' } });
         const tKey = process.env[wsc.api_key_env || 'SEARCH_API_KEY'] || '';
         const tBase = String(wsc.base_url || 'https://api.example.com/v1').replace(/\/+$/, '');
         if (!tKey) return sendJson(res, 503, { error: { message: 'tools api not configured (missing api key env)', type: 'service_unavailable' } });
@@ -4814,11 +5243,18 @@ const server = http.createServer(async (req, res) => {
         // 协议互转（按 key 开关 keys[].protocol_interop，默认关；看板「客户端 key」页可勾）：开启时
         // 「上游协议 != 客户端协议」走 chat 中枢互转；关闭时一律走下面的原生直通，由上游报协议不支持。
         const upFmt = resolveFormat(pRt);
+        // gemini 上游只认 Google 原生协议：responses/messages 客户端若「硬直通」，网关会按客户端协议把 body
+        // 打到上游 /responses|/messages，上游对 gemini 模型只能走 portable routing，遇到 previous_response_id
+        // 就回 400「requires a native Responses target; portable routing requires the full conversation in input」。
+        // 所以上游协议是 gemini 时一律走中枢翻译（chatToGemini），与 key 的 protocol_interop 无关。
+        // 注：池模式下这里看的是首选成员，池成员的协议应保持一致（混合协议池本来就只能在同协议成员间直通）。
+        const gemForce = upFmt === 'gemini' && kind !== 'gemini';
         // web_search 代理要用循环续跑，只能在 chat 中枢里做；同协议直通（responses↔responses、messages↔messages）
         // 是逐字节回吐，插不进循环。所以开了代理就强制走中枢（仅当客户端没在用上游原生服务端工具时）。
         const wsForce = wsMode() !== 'off' && wsEnabledFor(pRt) && !(Array.isArray(pBody.tools) && pBody.tools.some((t) => t && t.type && t.type !== 'function'));
-        if ((upFmt !== kind && pAuth.interop) || wsForce) {
+        if ((upFmt !== kind && (pAuth.interop || gemForce)) || wsForce) {
             if (wsForce && upFmt === kind) log('WS INTEROP', kind, '->', upFmt, pBody.model, '(代理需中枢，不走原生直通)');
+            else if (gemForce && !pAuth.interop) log('AUTO INTEROP', kind, '->', upFmt, pBody.model, '(上游仅支持 Google 原生协议)');
             else log('CONVERT', kind, '->', upFmt, pBody.model);
             return serveChatPipeline(req, res, { auth: pAuth, rt: pRt, body: pBody, rawBody: pRaw, t0, clientProto: kind });
         }
@@ -4826,10 +5262,14 @@ const server = http.createServer(async (req, res) => {
         const pPlan = pRt.poolPlan || null;
         const pAttempts = pPlan ? pPlan.order : [pRt];
         capture('client_req', { kind, ip: clientIp(req), key: pAuth.name, model: pBody.model, stream: !!pBody.stream, body: pBody });
+        let clientGone = false;
+        const hold = startFirstByteHold(res, !!pBody.stream);   // M12：同上
         try {
-            const ac = new AbortController();
-            const onClose = () => { if (!res.writableEnded) { try { ac.abort(); } catch { } } };
-            req.on('close', onClose);
+            let ac = new AbortController();
+            const idle = upIdleGuard(() => ac);
+            // H1：挂 res 的 close（客户端真断开），不再挂 req（Node≥16 语义不可靠）
+            const onClose = () => { idle.stop(); if (!res.writableEnded) { clientGone = true; try { ac.abort(); } catch { } } };
+            res.on('close', onClose);
             let up = null, upTxt = '', upStatus = 0, pLastRt = pRt;
             const pTrail = [];
             for (let i = 0; i < pAttempts.length; i++) {
@@ -4846,16 +5286,24 @@ const server = http.createServer(async (req, res) => {
                     const inj = injectReasonsIntoInput(pBody.input, aRt.provider);   // 客户端没回传的那几条，由网关补上（只补缺的、不重复、且只在同一供应商内）
                     if (inj.injected) { pPayload.input = inj.input; pBase.reason_inj = inj.injected; log('[reason] 直通补回', inj.injected, '条 ->', pBody.model); }
                 }
-                const pUrl = upstreamBase(aRt.providerCfg, kind) + (kind === 'responses' ? '/responses' : '/messages');
+                const pUrl = upstreamBase(aRt.providerCfg, kind, aRt.upstream_model) + (kind === 'responses' ? '/responses' : '/messages');
                 capture('upstream_req', { kind, url: pUrl, provider: aRt.provider, key: pAuth.name, model: pBody.model, upstream_model: aRt.upstream_model, payload: pPayload });
+                if (!clientGone && ac.signal.aborted) { ac = new AbortController(); idle.reset(); }
+                idle.arm();
                 try {
                     up = await fetch(pUrl, { method: 'POST', headers: pHeaders, body: jdump(pPayload), signal: ac.signal });
                     upStatus = up.status;
                 } catch (fe) {
-                    if (fe.name === 'AbortError') throw fe;                       // 客户端断开：不重试
-                    up = null; upStatus = 0; upTxt = 'fetch failed: ' + fe.message;
-                    noteAttempt(pTrail, aRt.provider, 0, fe.message);
-                    log('PASSTHROUGH FETCH FAIL', aRt.provider, kind, pBody.model, fe.message);
+                    if (fe.name === 'AbortError' && clientGone) throw fe;      // 客户端断开
+                    if (fe.name === 'AbortError') {                             // 看门狗超时 → 当 504 上游故障，可换成员
+                        up = null; upStatus = 504; upTxt = 'upstream idle timeout';
+                        noteAttempt(pTrail, aRt.provider, 504, 'idle timeout');
+                        log('UPSTREAM IDLE TIMEOUT', aRt.provider, kind, pBody.model);
+                    } else {
+                        up = null; upStatus = 0; upTxt = 'fetch failed: ' + fe.message;
+                        noteAttempt(pTrail, aRt.provider, 0, fe.message);
+                        log('PASSTHROUGH FETCH FAIL', aRt.provider, kind, pBody.model, fe.message);
+                    }
                 }
                 capture('upstream_status', { kind, provider: aRt.provider, status: up ? up.status : 0, ok: !!up && up.ok });
                 if (up && up.ok) { pRt = aRt; if (pPlan) { poolMark(pPlan.name, aRt.provider, true, pPlan.def); log('POOL HIT', pPlan.name, aRt.provider, pBody.model); } break; }
@@ -4867,7 +5315,6 @@ const server = http.createServer(async (req, res) => {
                 }
                 break;
             }
-            req.off('close', onClose);
             if (!up || !up.ok) {
                 const txt = upTxt;
                 const pFail = pPlan ? poolFailBody(pPlan, pTrail, txt) : null;
@@ -4878,10 +5325,13 @@ const server = http.createServer(async (req, res) => {
                 const pErrBody = pFail
                     ? { error: { message: pFail.message, type: 'upstream_pool_exhausted', code: 'upstream_unavailable', hint: pFail.hint, attempts: pFail.attempts } }
                     : parsed?.error ? { error: parsed.error } : { error: { message: txt.slice(0, 800) || 'upstream error', type: 'upstream_error' } };
+                hold.stop();                          // 收掉保活定时器/心跳
+                if (hold.sent) return endSse(res, pErrBody);
                 return sendJson(res, outStatus, pErrBody);
             }
             if (pBody.stream) {
                 if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+                hold.open();                       // 起心跳（第一块真实数据写出即自动停）
                 let tail = '', ttft = null, lineBuf = '', lastEvt = '', usage = {}, headSample = '';
                 const dec = new StringDecoder('utf8');
                 const reader = up.body.getReader();
@@ -4903,6 +5353,7 @@ const server = http.createServer(async (req, res) => {
                     if (u) for (const k of Object.keys(u)) if (typeof u[k] === 'number' && (u[k] > 0 || usage[k] == null)) usage[k] = u[k];
                 };
                 for (; ;) {
+                    idle.arm();
                     const { done, value } = await reader.read();
                     if (done) break;
                     if (ttft == null) ttft = Date.now() - t0;
@@ -4945,10 +5396,23 @@ const server = http.createServer(async (req, res) => {
                 record({ ...pBase, status: 200, ms: Date.now() - t0, provider: pRt.provider, upstream_model: pRt.upstream_model, format: kind, usage, ttft_ms: 0, usage_src: Object.keys(usage).length ? 'body' : 'missing', up_res_bytes: Buffer.byteLength(txt) });
             }
         } catch (e) {
+            // M13：同上，区分客户端断开（499）/ 看门狗超时（504）/ 真上游失败（502）
+            if (e.name === 'AbortError') {
+                if (clientGone) {
+                    log('CLIENT ABORT', kind, pBody.model, `${Date.now() - t0}ms`);
+                    record({ ...pBase, status: 499, ms: Date.now() - t0, provider: pRt.provider, format: kind, error: 'client aborted' });
+                    try { res.end(); } catch { }
+                    return;
+                }
+                log('UPSTREAM IDLE TIMEOUT', kind, pBody.model, `${Date.now() - t0}ms`);
+                record({ ...pBase, status: 504, ms: Date.now() - t0, provider: pRt.provider, format: kind, error: 'upstream idle timeout' });
+                if (!res.headersSent) return sendJson(res, 504, { error: { message: '上游长时间无数据（网关超时）', type: 'upstream_timeout' } });
+                return endSse(res, { error: { message: '上游长时间无数据（网关超时）', type: 'upstream_timeout' } });
+            }
             log('PASSTHROUGH ERROR', kind, pRt.provider, pBody.model, e.message);
             record({ ...pBase, status: 502, ms: Date.now() - t0, provider: pRt.provider, upstream_model: pRt.upstream_model, format: kind, error: 'fetch failed: ' + e.message });
             if (!res.headersSent) return sendJson(res, 502, { error: { message: 'upstream fetch failed: ' + e.message, type: 'upstream_error' } });
-            try { res.end(); } catch { }
+            return endSse(res, { error: { message: 'upstream fetch failed: ' + e.message, type: 'upstream_error' } });
         }
         return;
     }

@@ -9,6 +9,24 @@ services:
       - ./:/gw
     env_file:
       - ./.env
+    environment:
+      # 容器时区：不设的话统计按天文件与日志都按 UTC 切天，本地看会差几个小时
+      TZ: Asia/Shanghai
     ports:
       - "127.0.0.1:8010:8010"        # 只绑本机；对外交给反代/隧道
+    # 进程活着不等于事件循环没卡死：/healthz 能答话才算健康。
+    # 注意 docker 自身不会因为 unhealthy 重启容器（restart 只处理进程退出），
+    # 这里的作用是 `docker ps` 一眼看出异常 + 给外接 autoheal 留钩子。
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8010/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+    # 日志轮转：json-file 默认无上限，跑久了会把磁盘写满
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped

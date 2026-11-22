@@ -140,7 +140,7 @@
     "max_rounds": 2,
     "max_calls": 6,
     "timeout_ms": 25000,
-    "expose_tools_api": true,
+    "expose_tools_api": false,
     "providers": [],
     "models": [],
     "mode": "off"
