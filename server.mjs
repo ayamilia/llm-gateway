@@ -1095,6 +1095,26 @@ function setEnvVar(name, value) {
     fs.renameSync(tmp, ENV_PATH);
     process.env[n] = v;
 }
+// 只读作用域 key 的请求节流：同一标称 key 每秒最多一次（进程内，重启清零）。
+const QUOTA_RL = new Map();
+function quotaScopeGate(req, res, url) {
+    const a = authenticate(req);
+    if (!a || a.scope !== 'quota') return false;
+    const now = Date.now(), last = QUOTA_RL.get(a.name) || 0;
+    if (now - last < 1000) {
+        res.setHeader('Retry-After', '1');
+        sendJson(res, 429, { error: { message: 'read-only key is limited to one request per second', type: 'rate_limit_error', code: 'rate_limited' } });
+        return true;
+    }
+    QUOTA_RL.set(a.name, now);
+    if (QUOTA_RL.size > 2000) for (const [k, v] of QUOTA_RL) { if (now - v > 60000) QUOTA_RL.delete(k); }
+    const allow = url.pathname === '/v1/models' || url.pathname.startsWith('/v1/models/');
+    if (!allow) {
+        sendJson(res, 403, { error: { message: 'read-only key: only model listing and quota queries are permitted', type: 'permission_error', code: 'read_only_key' } });
+        return true;
+    }
+    return false;
+}
 function authenticate(req) {
     const h = req.headers['authorization'] || '';
     const bearer = h.startsWith('Bearer ') ? h.slice(7).trim() : '';
@@ -1116,6 +1136,8 @@ function authenticate(req) {
         name: hit.name, session_id: hit.session_id, user_agent: hit.user_agent || '', key, protocol: hit.protocol || '', interop: !!hit.protocol_interop,
         allow: Array.isArray(hit.models) && hit.models.length ? hit.models : null, pools,
         owner: hit.owner || '', role: hit.owner ? (panelUser(hit.owner) || {}).role || 'user' : 'admin',
+        // scope：all（默认，可对话/生成）或 quota（只读，只放行模型清单与额度查询）
+        scope: hit.scope === 'quota' ? 'quota' : 'all',
     };
 }
 // 客户端 key 的模型白名单判定。白名单为空 = 全部放开（默认）。
@@ -3295,8 +3317,38 @@ async function serveChatPipeline(req, res, opts) {
                         break;
                     }
                     capture('upstream_status', { candidate: cand, provider: aRt.provider, status: upRes.status, ok: upRes.ok });
-                    if (upRes.ok) { gotOk = true; break; }
-                    lastTxt = await upRes.text(); status = upRes.status;
+                    // 429 时若该 provider 配了第二把 key（api_key_env_2），退避 1s 后换 key 重试一次。
+                    // 换 key 只解决单个账号被限流的情况；仍 429 就按原逻辑交给成员切换或错误收尾。
+                    if (upRes.status === 429 && !aRt.__keyRotated) {
+                        const altEnv = (CFG.providers[aRt.provider] || {}).api_key_env_2;
+                        const altKey = altEnv ? process.env[altEnv] : '';
+                        if (altKey) {
+                            const hdr2 = { ...headers };
+                            let swapped = false;
+                            for (const hn of ['authorization', 'x-api-key', 'x-goog-api-key']) {
+                                const v = hdr2[hn];
+                                if (!v) continue;
+                                hdr2[hn] = String(v).startsWith('Bearer ') ? 'Bearer ' + altKey : altKey;
+                                swapped = true;
+                            }
+                            if (swapped) {
+                                log('UPSTREAM 429 KEY ROTATE', aRt.provider, aRt.upstream_model, '改用第二把 key 重试');
+                                await new Promise((r) => setTimeout(r, 1000));
+                                try {
+                                    upRes = await fetch(url, { method: 'POST', headers: hdr2, body: payloadStr, signal: ac.signal });
+                                } catch (fe2) {
+                                    if (fe2.name === 'AbortError') throw fe2;
+                                    netErr = fe2; upRes = null; status = 0; lastTxt = 'fetch failed: ' + fe2.message;
+                                }
+                                capture('upstream_status', { candidate: cand, provider: aRt.provider, status: upRes ? upRes.status : 0, ok: !!(upRes && upRes.ok), key_rotated: true });
+                                aRt.__keyRotated = true;
+                                ctx.keyRotated = true;
+                            }
+                        }
+                    }
+                    if (upRes && upRes.ok) { gotOk = true; break; }
+                    lastTxt = upRes ? await upRes.text() : lastTxt;
+                    status = upRes ? upRes.status : (status || 0);
                     noteAttempt(trail, aRt.provider, status, lastTxt);
                     const auto = !aRt.format || aRt.format === 'auto';
                     if (auto && protocolMismatch(status, lastTxt)) { log('PROTOCOL SWITCH', aRt.provider, aRt.upstream_model, `${format} 不支持, 试下一个`, `(${status})`); continue; }
@@ -4634,6 +4686,8 @@ function readBody(req, max = MAX_BODY) {
 const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const host = (req.headers.host || '').split(':')[0];
+    // 只读作用域：在协议分支之前统一拦截，避免各原生直通路径漏判
+    if (url.pathname.startsWith('/v1') && quotaScopeGate(req, res, url)) return;   // 覆盖 /v1/ 与 /v1beta/（Gemini 原生）
     // 请求体硬上限：声明超限就直接 413，不进任何业务逻辑（挡未登录的无限缓冲 DoS）
     const _clen = Number(req.headers['content-length'] || 0);
     if (_clen > MAX_BODY) {
