@@ -2665,43 +2665,34 @@ function goForecast(tzMin) {
     }
 
     const main = out[0] || null;
-    const planCap = main && main.cap ? main.cap : null;
 
-    // —— 以官方百分比为准校准 ——
-    // 官方 percent 覆盖所有客户端（含不经网关的直连），网关只能看到自己的流量，
-    // 所以用「官方值 / 网关估算」得到一个系数，把曲线与预测整体拉到官方口径。
-    const pctOfficial = Number.isFinite(Number((quota.monthly || {}).percent)) ? Number((quota.monthly || {}).percent) : null;
-    let scale = 1, officialSpent = null, calib = 'gateway';
-    if (pctOfficial != null && planCap && spent > 0.01) {
-        const target = pctOfficial / 100 * planCap;
-        const k = target / spent;
-        if (k >= 0.5 && k <= 3) {
-            scale = k; officialSpent = target; calib = 'official';
-            assumptions.push(`按官方 ${pctOfficial}% 校准 ×${k.toFixed(2)}（网关估算 $${spent.toFixed(2)}）`);
-        } else {
-            assumptions.push(`官方 ${pctOfficial}% 与网关估算差 ${k.toFixed(1)} 倍，未校准`);
-        }
-    } else if (pctOfficial == null) {
-        assumptions.push('官方百分比不可用，按网关估算');
-    }
+    // —— 只用官方百分比 ——
+    // 不保留任何本地反推的额度上限或校准系数：唯一锚点是上游 monthly.percent，
+    // 网关成本只负责「形状」（每天花了多少），比例 = 官方百分比 ÷ 网关累计成本，
+    // 所以预测值 = 官方百分比 × (预计总成本 ÷ 当前成本)，不引入 dollar cap。
+    const pctNow = Number.isFinite(Number((quota.monthly || {}).percent)) ? Number(quota.monthly.percent) : null;
+    const kPct = (pctNow != null && spentAll > 0.01) ? pctNow / spentAll : null;
+    if (pctNow == null) assumptions.push('官方百分比不可用，百分比视图停用');
+    const pctOf = (v) => (kPct == null ? null : +(v * kPct).toFixed(2));
 
-    const spentOut = officialSpent != null ? officialSpent : spent;
-    const applyScale = (v) => +(v * scale).toFixed(4);
-    const dailyOut = daily.map((x) => ({ ...x, cost: applyScale(x.cost), cum: x.cum == null ? null : applyScale(x.cum) }));
-    const fcOut = fc.map(applyScale), loOut = lo.map(applyScale), hiOut = hi.map(applyScale);
-    const modelsOut = out.map((m) => ({ ...m, spent: applyScale(m.spent), rate: applyScale(m.rate),
-        proj: applyScale(m.proj), raw: applyScale(m.raw), cap: m.cap }));
-
+    const dailyOut = daily;   // 全为网关成本（USD），前端按 kPct 映射成百分比
     return {
         as_of: now,
         cycle: { start: sDay, end: eDay, reset_at: end, days_total: daysTotal, days_done: daysDone, days_left: left, tz: TZ / 60000 },
-        plan: { model: main ? main.model : null, cap: planCap },
-        totals: { spent: +spentOut.toFixed(2), proj: +(projAll * scale).toFixed(2),
-                  lo: +Math.max(spentOut, (projAll - band) * scale).toFixed(2),
-                  hi: +((projAll + band) * scale).toFixed(2),
-                  gateway_spent: +spent.toFixed(2), scale: +scale.toFixed(3), caliber: calib },
-        daily: dailyOut, fc: fcOut, lo: loOut, hi: hiOut, sigma: +(sigma * scale).toFixed(4),
-        models: modelsOut,
+        plan: { model: main ? main.model : null },
+        totals: {
+            pct: pctNow == null ? null : +pctNow.toFixed(2),
+            pct_proj: pctOf(projAll),
+            pct_lo: pctOf(Math.max(spentAll, projAll - band)),
+            pct_hi: pctOf(projAll + band),
+            spent: +spentAll.toFixed(2), proj: +projAll.toFixed(2),
+            lo: +Math.max(spentAll, projAll - band).toFixed(2), hi: +(projAll + band).toFixed(2),
+        },
+        daily: dailyOut, fc, lo, hi,
+        models: out.map((m) => ({
+            model: m.model, spent: +m.spent.toFixed(4), rate: +m.rate.toFixed(4),
+            proj: +m.proj.toFixed(4), raw: +m.raw.toFixed(4), free: /-free$/.test(m.model),
+        })),
         quota: { percent: (quota.monthly || {}).percent ?? null, resets_at: (quota.monthly || {}).resets_at || null },
         assumptions,
     };

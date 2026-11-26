@@ -1613,42 +1613,39 @@ const fcDayLabel = (dk) => { const d = new Date(dk * 864e5 + 8 * 36e5); return S
 function renderForecast(force) {
   api('/api/stats/go-forecast?tz=480' + (force ? '&_=' + Date.now() : '')).then(D => {
     const svg = $('fc_chart'); if (!svg) return;
-    const planCap = D.plan && D.plan.cap;
-    if (!planCap) { $('fc_kpis').innerHTML = '<span class="dim">暂无可计价的 Go 流量</span>'; return; }
-    const P = v => v / planCap * 100;
+    const pctNow = D.totals && D.totals.pct;
+    if (pctNow == null) { $('fc_kpis').innerHTML = '<span class="dim">上游未给出官方月度百分比，预测视图停用</span>'; svg.innerHTML = ''; return; }
+    const kP = pctNow / Math.max(D.totals.spent, 1e-9);      // 成本 → 百分比（唯一锚点＝官方 percent）
+    const P = v => v * kP;
     const rows = (D.models || []).filter(m => m.spent >= 0.05 || m.proj >= 0.05).slice(0, 8);
-    const tight = rows.filter(m => m.cap).sort((a,b) => (b.proj/b.cap) - (a.proj/a.cap))[0];
-    const overHeat = tight && tight.raw > tight.cap;
-    const pctMain = P(D.totals.proj);
-    const nearCap = D.totals.proj > planCap;
+    const totalProj = D.totals.proj || 1;
+    const top = rows.slice().sort((a, b) => b.proj - a.proj)[0];
+    const pctMain = D.totals.pct_proj;
+    const nearCap = pctMain > 100;
 
     $('fc_kpis').innerHTML = `
       <div class="fckpi"><div class="lb">本周期已花</div>
-        <div class="v amber">${usd(D.totals.spent)} <span class="dim" style="font-size:calc(var(--fs)*0.95)">${P(D.totals.spent).toFixed(0)}%</span></div>
-        <div class="sub">官方口径 ${D.quota && D.quota.percent != null ? D.quota.percent + '%' : '—'}${D.totals.caliber === 'official' ? ` · 网关估算 ${usd(D.totals.gateway_spent)} 校准 ×${D.totals.scale}` : ' · 网关估算'}</div></div>
+        <div class="v amber">${pctNow.toFixed(1)}% <span class="dim" style="font-size:calc(var(--fs)*0.95)">${usd(D.totals.spent)}</span></div>
+        <div class="sub">官方口径 · 网关估算 ${usd(D.totals.spent)}${D.quota && D.quota.resets_at ? ' · 重置 ' + esc(String(D.quota.resets_at).slice(0, 10)) : ''}</div></div>
       <div class="fckpi"><div class="lb">预计期末</div>
-        <div class="v ${nearCap ? 'red' : 'green'}">${usd(D.totals.proj)} <span class="dim" style="font-size:calc(var(--fs)*0.95)">${pctMain.toFixed(0)}%</span></div>
-        <div class="sub">区间 ${usd(D.totals.lo)} – ${usd(D.totals.hi)} · 剩 ${D.cycle.days_left} 天</div></div>
-      <div class="fckpi"><div class="lb">最紧模型</div>
-        <div class="v ${overHeat ? 'red' : 'green'}">${overHeat ? esc(tight.model) : '全模型安全'}</div>
-        <div class="sub">${tight ? `${esc(tight.model)} 期末占额度 ${(tight.proj/tight.cap*100).toFixed(0)}%${overHeat ? ' · 会触顶' : ` · 约 ${Math.round(tight.dtc)} 天后到 $${tight.cap}`}` : '—'}</div></div>`;
+        <div class="v ${nearCap ? 'red' : 'green'}">${pctMain.toFixed(0)}% <span class="dim" style="font-size:calc(var(--fs)*0.95)">${usd(D.totals.proj)}</span></div>
+        <div class="sub">区间 ${D.totals.pct_lo.toFixed(0)}% – ${D.totals.pct_hi.toFixed(0)}% · 剩 ${D.cycle.days_left} 天</div></div>
+      <div class="fckpi"><div class="lb">开销最大</div>
+        <div class="v ${nearCap ? 'red' : 'cyan'}">${top ? esc(top.model) : '—'}</div>
+        <div class="sub">${top ? `期末 ${usd(top.proj)} · 占预计成本 ${(top.proj / totalProj * 100).toFixed(0)}%` : '—'}</div></div>`;
 
-    // 表
-    table($('fc_tbl'), ['模型', '已花', '日速率', '期末预计', '月额度', '占用'],
-      rows.map(m => { const p = m.cap ? m.proj / m.cap * 100 : null;
-        return [esc(m.model), usd(m.spent), usd(m.rate), usd(m.proj),
-          m.cap ? '$' + m.cap : (m.free ? '<span class="green">免费</span>' : '<span class="dim">未计价</span>'),
-          p == null ? '—' : `<span class="${p > 80 ? 'red' : (p > 60 ? 'amber' : 'green')}">${p.toFixed(0)}%</span>`];
-      }), '暂无', null, [0], 22);
+    table($('fc_tbl'), ['模型', '已花', '日速率', '期末预计', '占预计'],
+      rows.map(m => [esc(m.model), usd(m.spent), usd(m.rate), usd(m.proj),
+        `<span class="dim">${(m.proj / totalProj * 100).toFixed(0)}%</span>`]), '暂无', null, [0], 22);
 
-    // 图
     svg.innerHTML = '';
     const W = 900, H = 240, L = 60, R = 104, T = 16, B = 28, pw = W-L-R, ph = H-T-B;
     const n = D.daily.length, ymax = 120;
     const x = i => L + pw * i / Math.max(1, n - 1);
-    const y = v => T + ph * (1 - P(v) / ymax);
+    const yp = v => T + ph * (1 - v / ymax);
+    const y = v => yp(P(v));
     for (let g = 0; g <= 6; g++) {
-      const p = 20 * g, yy = T + ph * (1 - p / ymax);
+      const p = 20 * g, yy = yp(p);
       const tx = fcEl('text', { x:L-8, y:yy+4, fill:'var(--dim2)', 'font-size':10, 'text-anchor':'end' });
       tx.textContent = p + '%'; svg.appendChild(tx);
     }
@@ -1656,21 +1653,17 @@ function renderForecast(force) {
       const tx = fcEl('text', { x:x(i), y:H-8, fill:'var(--dim2)', 'font-size':10, 'text-anchor':'middle' });
       tx.textContent = fcDayLabel(D.daily[i].d); svg.appendChild(tx);
     });
-    // 置信带
     const cut = D.daily.findIndex(v => v.cum == null);
     const startIdx = cut === -1 ? n - 1 : cut - 1;
-    const top = [[x(startIdx), y(D.daily[startIdx].cum)]], bot = [[x(startIdx), y(D.daily[startIdx].cum)]];
-    D.hi.forEach((v, k) => { top.push([x(startIdx + k + 1), y(v)]); bot.push([x(startIdx + k + 1), y(D.lo[k])]); });
-    let band = fcMono(top);
-    for (let i = bot.length - 1; i >= 0; i--) band += `L${bot[i][0]},${bot[i][1]}`;
+    const topPts = [[x(startIdx), y(D.daily[startIdx].cum)]], botPts = [[x(startIdx), y(D.daily[startIdx].cum)]];
+    D.hi.forEach((v, k) => { topPts.push([x(startIdx + k + 1), y(v)]); botPts.push([x(startIdx + k + 1), y(D.lo[k])]); });
+    let band = fcMono(topPts);
+    for (let i = botPts.length - 1; i >= 0; i--) band += `L${botPts[i][0]},${botPts[i][1]}`;
     svg.appendChild(fcEl('path', { d: band + 'Z', fill:'var(--amber)', 'fill-opacity':.16, stroke:'none' }));
-    // 100% 线
-    svg.appendChild(fcEl('line', { x1:L, x2:W-R, y1:y(planCap), y2:y(planCap), stroke:'var(--red)', 'stroke-width':1, 'stroke-dasharray':'3 4' }));
-    const pl = fcEl('text', { x:W-R+6, y:y(planCap)+4, fill:'var(--red)', 'font-size':10 }); pl.textContent = 'plan 100%'; svg.appendChild(pl);
-    // 实际
+    svg.appendChild(fcEl('line', { x1:L, x2:W-R, y1:yp(100), y2:yp(100), stroke:'var(--red)', 'stroke-width':1, 'stroke-dasharray':'3 4' }));
+    const pl = fcEl('text', { x:W-R+6, y:yp(100)+4, fill:'var(--red)', 'font-size':10 }); pl.textContent = 'plan 100%'; svg.appendChild(pl);
     const actPts = D.daily.filter(v => v.cum != null).map((v, i) => [x(i), y(v.cum)]);
     svg.appendChild(fcEl('path', { d: fcMono(actPts), fill:'none', stroke:'var(--cyan)', 'stroke-width':2.6 }));
-    // 预测（超 100% 段换深红）
     const pts = [[x(startIdx), y(D.daily[startIdx].cum)], ...D.fc.map((v, k) => [x(startIdx + k + 1), y(v)])];
     let cur = [pts[0]], curOver = P(D.daily[startIdx].cum) > 100;
     const segs = [];
@@ -1680,31 +1673,29 @@ function renderForecast(force) {
       else cur.push(p);
     }
     segs.push([cur, curOver]);
-    segs.forEach(([s, o]) => { if (s.length < 2) return;
-      svg.appendChild(fcEl('path', { d: fcMono(s), fill:'none', stroke: o ? '#e5342b' : 'var(--amber)',
+    segs.forEach(([sg, o]) => { if (sg.length < 2) return;
+      svg.appendChild(fcEl('path', { d: fcMono(sg), fill:'none', stroke: o ? '#e5342b' : 'var(--amber)',
         'stroke-width': o ? 2.6 : 2.2, 'stroke-dasharray': o ? '7 4' : '6 4' })); });
-    // 今日线
     const tx0 = x(startIdx);
     svg.appendChild(fcEl('line', { x1:tx0, x2:tx0, y1:T, y2:H-B, stroke:'var(--dim2)', 'stroke-dasharray':'2 3', 'stroke-opacity':.6 }));
     const tl = fcEl('text', { x:tx0+5, y:T+10, fill:'var(--dim2)', 'font-size':10 }); tl.textContent = '今天'; svg.appendChild(tl);
-    // 期末标签
     const endT = fcEl('text', { x:W-R+6, y:Math.max(T+10, y(D.totals.proj)-6), fill: nearCap ? 'var(--red)' : 'var(--amber)', 'font-size':11 });
-    endT.textContent = '$' + D.totals.proj.toFixed(1) + ' · ' + pctMain.toFixed(0) + '%'; svg.appendChild(endT);
-    // 悬停
+    endT.textContent = pctMain.toFixed(0) + '% · ' + usd(D.totals.proj); svg.appendChild(endT);
     const tip = $('fc_tip');
     svg.onmousemove = (e) => {
       const r = svg.getBoundingClientRect();
       const px = (e.clientX - r.left) / r.width * W;
       let i = Math.round((px - L) / pw * (n - 1)); i = Math.max(0, Math.min(n - 1, i));
       const v = D.daily[i].cum != null ? D.daily[i].cum : D.fc[i - startIdx - 1];
+      if (v == null) { tip.style.display = 'none'; return; }
       tip.style.display = 'block';
       tip.style.left = (e.clientX - r.left + 12) + 'px';
       tip.style.top = (e.clientY - r.top + 10) + 'px';
       tip.innerHTML = `<span class="dim">${fcDayLabel(D.daily[i].d)}</span> · 累计 <span class="cyan">${usd(v)}</span> <span class="dim">(${P(v).toFixed(1)}%)</span>${D.daily[i].cum == null ? ' <span class="dim">· 预测</span>' : ''}`;
     };
     svg.onmouseleave = () => { tip.style.display = 'none'; };
-    $('fc_note').innerHTML = `${D.totals.caliber === 'official' ? '已按官方百分比校准（曲线与预测整体缩放）。' : ''}纵轴＝额度占用百分比，分母为 <span class="cyan">${esc(D.plan.model)}</span> 的月额度 $${planCap}（Go 档官方值）；其余模型在表内各自按自己额度算。` +
-      `周期 ${fcDayLabel(D.cycle.start)} → ${fcDayLabel(D.cycle.end)}（按 resets_at 反推，重置 ${esc((D.quota && D.quota.resets_at) || '') || '未知'}）。` +
+    $('fc_note').innerHTML = `纵轴＝上游月度额度占用百分比，锚点取官方 <span class="cyan">monthly.percent</span>；曲线形状来自网关成本，` +
+      `未使用本地反推额度或校准系数。周期 ${fcDayLabel(D.cycle.start)} → ${fcDayLabel(D.cycle.end)}（按 resets_at 反推）。` +
       (D.assumptions && D.assumptions.length ? ` <span class="amber">${esc(D.assumptions.join('；'))}</span>` : '');
     $('fc_at').textContent = '更新于 ' + new Date(D.as_of).toLocaleTimeString('zh-CN', { hour12: false });
   }).catch(e => {
