@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>LLM 网关</title>
+<title>小满的网关</title>
 <style>
   :root{
     --bg:#000; --panel:#080706; --panel2:#100d09; --line:#4a3b28; --line2:#2a2117;
@@ -15,7 +15,6 @@
     --btn:#171208; --btn2:#1a1408; --btn3:#1d160c; --inputbg:#000; --toastbg:#141009;
     --onfg:#000; --dangerline:#5b2a26; --dangerbg:rgba(255,107,97,.08); --hover:rgba(255,176,0,.07);
     --colline:#2a2117; --headwash:rgba(255,176,0,.12);
-    --mmbulk:rgba(255,176,0,.07); --mmsingle:rgba(138,217,198,.07);
     --s1:#ffb000; --s2:#8ad9c6; --s3:#cba7ff; --s4:#ff8c42; --s5:#a8d47f; --s6:#7fb0ff; --s7:#ff9ec4; --s8:#d9c07a; --sx:#5f564d;
     --fs:15px;              /* 基准字号，顶栏可切换 */
   }
@@ -27,9 +26,16 @@
     --btn:#e8dfcc; --btn2:#f2e8d5; --btn3:#f5ecda; --inputbg:#fffdf7; --toastbg:#3a3227;
     --onfg:#fff8ec; --dangerline:#d8a79f; --dangerbg:rgba(176,53,42,.08); --hover:rgba(160,90,0,.10);
     --colline:#e4dac6; --headwash:rgba(160,90,0,.10);
-    --mmbulk:rgba(160,90,0,.07); --mmsingle:rgba(13,111,99,.07);
     --s1:#9c5a00; --s2:#0d6f63; --s3:#6741b8; --s4:#bf5518; --s5:#3b7318; --s6:#1f5fa8; --s7:#a8457a; --s8:#8a6d1f; --sx:#8d8172;
   }
+
+  /* 三套配色：暖砂 / 青瓷 / 夜航（暗/亮跟随系统） */
+  html[data-scheme="sand"]{--bg:#14110d;--panel:#1e1913;--panel2:#251f17;--line:#3a2f22;--line2:#2a2117;--text:#f4ecdf;--dim2:#c9b9a3;--amber:#ffb000;--orange:#ff8c42;--btn:#1a150f;--btn2:#1f1912;--btn3:#241d15;--inputbg:#14110d;--toastbg:#1e1913;--hover:rgba(255,176,0,.07);--headwash:rgba(255,176,0,.12);--colline:#2a2117;}
+  html[data-scheme="celadon"]{--bg:#0a1213;--panel:#111d1e;--panel2:#162527;--line:#244040;--line2:#1b3132;--text:#e9f4f2;--dim2:#a9c6c2;--amber:#8ad9c6;--orange:#5fb8a8;--btn:#10201f;--btn2:#142624;--btn3:#182b29;--inputbg:#0a1213;--toastbg:#111d1e;--hover:rgba(138,217,198,.08);--headwash:rgba(138,217,198,.12);--colline:#1b3132;}
+  html[data-scheme="midnight"]{--bg:#090e1a;--panel:#111a2b;--panel2:#16213a;--line:#26324d;--line2:#1c2740;--text:#eaf0ff;--dim2:#aebbd8;--amber:#ffb454;--orange:#ff8c42;--btn:#0e1626;--btn2:#121b2e;--btn3:#172136;--inputbg:#090e1a;--toastbg:#111a2b;--hover:rgba(255,180,84,.08);--headwash:rgba(255,180,84,.12);--colline:#1c2740;}
+  html[data-scheme="sand"][data-theme="light"]{--bg:#f7f1e6;--panel:#fffdf7;--panel2:#efe7d8;--line:#d8c7ab;--line2:#e4dac6;--text:#2b241c;--dim2:#6d6152;--amber:#bf5518;--orange:#d97a2b;--btn:#eee4d2;--btn2:#f4ecdd;--btn3:#f7f0e2;--inputbg:#fffdf7;--toastbg:#3a3227;--hover:rgba(191,85,24,.08);--headwash:rgba(191,85,24,.10);--colline:#e4dac6;}
+  html[data-scheme="celadon"][data-theme="light"]{--bg:#eef4f1;--panel:#fbfefd;--panel2:#e6f0ec;--line:#bfd6cf;--line2:#d5e4df;--text:#1d302d;--dim2:#5f7a74;--amber:#2f7f70;--orange:#3f9c8a;--btn:#e3eeea;--btn2:#eaf3f0;--btn3:#eff7f4;--inputbg:#fbfefd;--toastbg:#223430;--hover:rgba(47,127,112,.08);--headwash:rgba(47,127,112,.10);--colline:#d5e4df;}
+  html[data-scheme="midnight"][data-theme="light"]{--bg:#eef1f8;--panel:#ffffff;--panel2:#e8edf7;--line:#c9d2e6;--line2:#dbe2f0;--text:#1b2437;--dim2:#5d6a85;--amber:#c47a1a;--orange:#a85f12;--btn:#e6ebf5;--btn2:#edf1f8;--btn3:#f3f6fb;--inputbg:#ffffff;--toastbg:#252f45;--hover:rgba(196,122,26,.08);--headwash:rgba(196,122,26,.10);--colline:#dbe2f0;}
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
     font-family:ui-monospace,"JetBrains Mono","Cascadia Mono",Menlo,Consolas,"Noto Sans Mono CJK SC","Microsoft YaHei",monospace;
@@ -60,6 +66,9 @@
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
   .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .foot{display:flex;justify-content:center;align-items:center;gap:26px;margin:18px 0 10px;padding:12px 0 2px;border-top:1px solid var(--line);font-size:calc(var(--fs)*0.85)}
+  .foot a{color:var(--dim2);text-decoration:none;letter-spacing:.08em;border-bottom:1px solid transparent;transition:color .15s,border-color .15s}
+  .foot a:hover{color:var(--amber);border-bottom-color:var(--amber)}
   @media(max-width:1000px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
 
   .tile{border:1px solid var(--line);background:var(--panel2);padding:8px 12px}
@@ -89,10 +98,6 @@
 
   .amber{color:var(--amber)} .green{color:var(--green)} .red{color:var(--red)}
   .dim{color:var(--dim2)} .cyan{color:var(--cyan)} .orange{color:var(--orange)} .violet{color:var(--violet)}
-  .barwrap{position:relative}
-  .ovline{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
-  .ovline polyline{fill:none;stroke:var(--cyan);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round;opacity:.9}
-  .ovline circle{fill:var(--cyan);stroke:none}
   .bar{height:64px;display:flex;align-items:flex-end;gap:2px}
   .bar .col{flex:1;display:flex;flex-direction:column-reverse;min-height:2px;cursor:default}
   .bar .col>.sg{width:100%;background:var(--s1)}
@@ -112,25 +117,12 @@
   button.act{background:var(--btn3);border:1px solid var(--line);color:var(--amber);font:inherit;
     font-size:calc(var(--fs)*0.9);padding:6px 16px;cursor:pointer}
   button.act:hover{border-color:var(--amber)}
-  /* 加模型：「批量（勾选清单）」与「手动单个」两块用底色+左侧色条区分，防止在单个区点按钮当成批量加 */
-  .mmblk{border:1px solid var(--line2);border-left:3px solid var(--line2);padding:10px 12px;margin-top:12px}
-  .mmblk.bulk{border-left-color:var(--amber);background:var(--mmbulk)}
-  .mmblk.single{border-left-color:var(--cyan);background:var(--mmsingle)}
-  .mmtag{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:calc(var(--fs)*0.88)}
-  .mmtag b{font-weight:400;letter-spacing:.04em}
-  .mmblk.bulk .mmtag b{color:var(--amber)}
-  .mmblk.single .mmtag b{color:var(--cyan)}
-  #mm_bulkadd{background:var(--amber);color:var(--onfg);border-color:var(--amber)}
-  #mm_bulkadd:hover{filter:brightness(1.07)}
   button.danger{color:var(--red);border-color:var(--dangerline);padding:3px 10px;font-size:calc(var(--fs)*0.82)}
   .field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
   .field label{color:var(--dim2);font-size:calc(var(--fs)*0.84)}
   .hint{color:var(--dim2);font-size:calc(var(--fs)*0.84)}
   .msg{padding:8px 0;color:var(--dim2)}
   .pill{border:1px solid var(--line);padding:1px 7px;font-size:calc(var(--fs)*0.78);color:var(--dim2)}
-  /* key 表：名称列固定宽度，超长省略（悬停看全名） */
-  .kname{display:inline-block;width:15ch;max-width:15ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-  #tbl_keys th:first-child,#tbl_keys td:first-child{width:18ch}
   .eff{border:1px solid var(--line2);padding:0 5px;margin:0 3px 2px 0;font-size:calc(var(--fs)*0.75);color:var(--amber);white-space:nowrap;display:inline-block}
   .eff.off{color:var(--dim2);border-style:dashed}
   .effrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;max-width:230px}
@@ -145,39 +137,12 @@
   .pvhead .line{flex:1;height:1px;background:var(--line2)}
   .pvhead .caret{width:1em;text-align:center}
   .pvbody{padding-top:2px}
-  /* 上游组成员编辑行：供应商 / 权重 / 上游模型名 / 删除 */
-  .mrow{display:grid;grid-template-columns:1.4fr 58px 1.3fr 1.7fr 30px;gap:6px;margin-bottom:6px;align-items:center}
-  .mrow input[type=number]{text-align:center;padding-left:4px;padding-right:4px}
-  @media (max-width:820px){
-    .mrow{display:flex;flex-direction:column;gap:5px;border:1px solid var(--line);padding:7px}
-    .mrow .pl_del{align-self:flex-end;padding:2px 12px}
-  }
   /* 「入/出」格：上行 token，下行协议（小一号）。高度锁死＝原单行高（td 字号 0.9×--fs、行高 1.55），
      所以两行也不会撑高行——实测行高与单行版一致（31.92px）。 */
   .tcell{display:flex;flex-direction:column;justify-content:center;height:calc(var(--fs)*0.9*1.55);
     line-height:1.0;font-size:calc(var(--fs)*0.76)}
   .tcell .p{font-size:calc(var(--fs)*0.62);color:var(--dim2)}
-  /* 时间列第二行（上游会话 id）：width:0 让它不参与列宽计算，min-width:100% 再撑满时间文本的宽度，
-     超出即省略号截断 —— 列宽始终由上面的时间决定，长 UUID 不会把「时间」列撑宽 */
-  .tcell .osid{display:block;width:0;min-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hidden{display:none !important}
-  /* 模型白名单弹层（客户端 key 页） */
-  .ovl{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:14px}
-  .ovlbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;width:100%;max-width:780px;max-height:88vh;
-    display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.55)}
-  .ovlh{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--colline);
-    font-weight:700;color:var(--amber);background:var(--headwash);border-radius:10px 10px 0 0}
-  .ovlh .line{flex:1;height:1px;background:var(--line2)}
-  .ovlb{padding:12px 14px;overflow:auto}
-  .ovlf{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--colline);flex-wrap:wrap}
-  .kmodbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-  .kmodbar input{width:auto;min-width:180px;max-width:260px}
-  .kmodlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:1px 10px}
-  .kmodlist label{display:flex;gap:7px;align-items:center;padding:4px 6px;border-radius:5px;cursor:pointer;
-    font-size:calc(var(--fs)*0.86);word-break:break-all}
-  .kmodlist label:hover{background:var(--hover)}
-  .kmodlist input{width:auto;margin:0}
-  @media (max-width:820px){ .kmodlist{grid-template-columns:1fr} }
   code{color:var(--cyan);word-break:break-all}
   .gwtoggle{background:var(--btn);border:1px solid var(--line);color:var(--dim2);font:inherit;
     font-size:calc(var(--fs)*0.92);padding:5px 14px;cursor:pointer}
@@ -209,25 +174,6 @@
     color:var(--amber);padding:10px 16px;font-size:calc(var(--fs)*0.9);opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.on{opacity:1}
 
-  /* ---------- 登录 / 身份 ---------- */
-  .loginmask{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:18px}
-  .loginbox{width:min(390px,100%);border:1px solid var(--line);background:var(--panel);padding:22px}
-  .loginbox .t{font-size:calc(var(--fs)*1.15);letter-spacing:.1em;color:var(--amber);margin-bottom:4px}
-  .loginbox .s{color:var(--dim2);font-size:calc(var(--fs)*.85);margin-bottom:16px}
-  .loginbox .field{margin-bottom:10px}
-  .loginbox .field label{display:block;color:var(--dim2);font-size:calc(var(--fs)*.82);margin-bottom:4px}
-  .loginbox input{width:100%}
-  .loginbox .err{color:var(--red);font-size:calc(var(--fs)*.82);min-height:1.3em;margin-top:8px}
-  .mechip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);padding:2px 8px;color:var(--dim2);font-size:calc(var(--fs)*.85)}
-  .mechip b{color:var(--amber);font-weight:700}
-  .roleuser{color:var(--cyan)}
-  .apiurl{color:var(--cyan);cursor:pointer;font-size:calc(var(--fs)*.86)}
-  .apiurl:hover{text-decoration:underline}
-  .sidcopy{color:var(--amber);cursor:pointer;font-family:ui-monospace,Consolas,'Courier New',monospace;font-size:calc(var(--fs)*.86)}
-  .sidcopy:hover{text-decoration:underline}
-  .loginbox code{color:var(--cyan);word-break:break-all}
-  #pl_userbox .kmodlist{max-height:200px;overflow:auto;border:1px solid var(--line);padding:4px 6px;margin:6px 0}
-
   /* ---------- 手机 / 窄屏 ---------- */
   @media (max-width:820px){
     .wrap{padding:6px;gap:8px}
@@ -246,7 +192,6 @@
     .bar{height:54px}
     /* 表格 → 卡片式：隐藏表头，每行一张卡，每格左边显示列名 */
     table{font-size:calc(var(--fs)*0.88)}
-    .kname{width:auto;max-width:100%}
     thead{display:none}
     tbody tr{display:block;border:1px solid var(--line2);background:var(--panel2);
       margin-bottom:6px;padding:4px 8px}
@@ -278,36 +223,51 @@
     .grid4,.grid3{grid-template-columns:1fr}
     .fsgroup{font-size:calc(var(--fs)*0.78)}
   }
+
+  /* —— 周期用量预测（2026-11-27 新增） —— */
+  .fcgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+  .fckpi{border:1px solid var(--line2);background:var(--panel2);padding:8px 12px}
+  .fckpi .lb{color:var(--dim2);font-size:calc(var(--fs)*0.8);letter-spacing:.04em}
+  .fckpi .v{font-size:calc(var(--fs)*1.5);line-height:1.3}
+  .fckpi .sub{color:var(--dim2);font-size:calc(var(--fs)*0.78)}
+  svg.fc{display:block;width:100%;height:auto}
+  .fcpanel{border:1px solid var(--line2);background:linear-gradient(180deg,rgba(255,176,0,.045),rgba(255,176,0,0) 42%),var(--panel2);
+    padding:8px 10px 6px;margin:2px 0 8px}
+  .fcwrap{position:relative}
+  .fctip{position:absolute;pointer-events:none;background:var(--panel2);border:1px solid var(--line);
+    padding:5px 8px;font-size:calc(var(--fs)*0.8);display:none;white-space:nowrap;z-index:5;color:var(--text)}
+  @media (max-width:820px){ .fcgrid{grid-template-columns:1fr 1fr} }
 </style>
+<link rel="stylesheet" href="/bg-avatar-gw.css">
 </head>
 <body>
 <div class="wrap">
 
   <div class="top">
-    <b>LLM GATEWAY</b>
+    <b>小满的网关</b>
     <span id="dot" class="dot bad"></span>
     <span id="status" class="dim">连接中…</span>
-    <button id="gw_toggle" class="gwtoggle adminonly">网关：--</button>
-    <button id="cap_toggle" class="gwtoggle adminonly">抓包：--</button>
-    <button id="um_toggle" class="gwtoggle adminonly" title="多用户模式：面板用户管理 + 按用户用量概览&#10;默认关闭（单用户界面）。开关状态只存在本浏览器，不改配置。">多用户：--</button>
+    <button id="gw_toggle" class="gwtoggle">网关：--</button>
+    <button id="cap_toggle" class="gwtoggle">抓包：--</button>
     <span class="spacer"></span>
-    <span id="me_chip" class="mechip hidden"><span>登录为</span><b id="me_name">-</b><span id="me_role" class="roleuser"></span></span>
-    <button id="logout" class="gwtoggle hidden">登出</button>
     <span class="fsgroup">字号
       <button data-fs="13">小</button><button data-fs="15">中</button><button data-fs="18">大</button>
     </span>
-    <span class="fsgroup">主题
-      <button data-thm="dark">暗</button><button data-thm="light">亮</button>
+    <span class="fsgroup">配色
+      <button data-sch="sand">暖砂</button><button data-sch="celadon">青瓷</button><button data-sch="midnight">夜航</button>
+      <span style="width:8px"></span><button data-mode="light">亮</button><button data-mode="dark">暗</button>
+    </span>
+    <span class="fsgroup">key
+      <input id="key" type="password" placeholder="本机访问需填" style="width:190px">
+      <button id="savekey">存</button>
     </span>
   </div>
 
   <div class="nav">
     <button data-tab="stats" class="on">用量统计</button>
-    <button data-tab="models" class="adminonly">模型列表</button>
-    <button data-tab="providers" class="adminonly">增加供应商</button>
-    <button data-tab="pools">上游组</button>
+    <button data-tab="models">模型列表</button>
+    <button data-tab="providers">增加供应商</button>
     <button data-tab="keys">客户端 key</button>
-    <button data-tab="users" class="adminonly hidden" id="nav_users">多用户</button>
     <span class="spacer"></span>
     <button id="reload">刷新</button>
   </div>
@@ -315,10 +275,8 @@
   <div class="subnav" id="subnav">
     <button data-sub="overview" class="on">概览</button>
     <button data-sub="bymodel">按模型</button>
-    <button data-sub="byprovider" class="adminonly">按上游</button>
-    <button data-sub="bykey" class="adminonly">按客户端</button>
-    <button data-sub="bysession" class="adminonly">按会话</button>
-    <button data-sub="pair" class="adminonly">key × 模型</button>
+    <button data-sub="byprovider">按上游</button>
+    <button data-sub="bykey">按客户端</button>
     <button data-sub="recent">最近请求</button>
   </div>
 
@@ -329,14 +287,9 @@
 
     <!-- 时间口径：作用于 概览 / 按模型 / 按上游 / 按客户端 -->
     <div id="rangebar" class="box">
-      <div class="h">统计口径<span class="line"></span><span class="dim">上面选「走上游组」还是「网关直连」，下面所有概览与统计表都跟着切换</span></div>
+      <div class="h">统计时间口径<span class="line"></span><span class="dim">作用于概览与三张统计表（最近请求页有自己的筛选）</span></div>
       <div class="b" style="padding:8px 10px">
-        <div class="rbtns adminonly" id="modebtns">
-          <button class="rbtn" data-mode="pool">走上游组</button>
-          <button class="rbtn" data-mode="direct">网关直接转发</button>
-          <span class="hint" id="mode_hint" style="margin-left:10px"></span>
-        </div>
-        <div class="rbtns" style="margin-top:8px">
+        <div class="rbtns">
           <button class="rbtn" data-rng="1h">最近 1 小时</button>
           <button class="rbtn" data-rng="5h">最近 5 小时</button>
           <button class="rbtn" data-rng="24h">最近 24 小时</button>
@@ -360,7 +313,7 @@
 
     <!-- 概览 -->
     <div id="sub-overview">
-      <div class="grid4" style="margin-bottom:10px">
+      <div class="grid3" style="margin-bottom:10px">
         <div class="tile"><div class="k">请求总数</div><div class="v" id="t_req">-</div>
           <div class="s">错误 <span id="t_err" class="red">-</span> · 运行 <span id="t_up" class="cyan">-</span></div></div>
         <div class="tile"><div class="k">输入 / 输出 tokens</div><div class="v" id="t_tok">-</div>
@@ -378,15 +331,39 @@
         <div class="h"><span id="chart_title">输入 tokens</span>
           <select id="stack_key" title="柱状图按客户端 key 分色：默认全部 key 聚合显示总量，选单个 key 只看它的用量"></select>
           <span class="line"></span><span class="dim" id="chart_sub">按本地时间</span><span id="h24s" class="dim"></span></div>
-        <div class="b"><div class="barwrap"><div class="bar" id="bar"></div><svg class="ovline" id="ovline" viewBox="0 0 100 100" preserveAspectRatio="none"></svg></div><div class="axis" id="axis"></div><div class="legend" id="legend"></div><div class="legend" id="ovlegend"></div></div>
+        <div class="b"><div class="bar" id="bar"></div><div class="axis" id="axis"></div><div class="legend" id="legend"></div></div>
       </div>
       <div class="box" style="margin-top:10px">
         <div class="h">上游额度<span class="line"></span><span class="dim" id="q_at"></span>
-          <button class="act adminonly" id="q_refresh" style="margin-left:8px">刷新</button></div>
-        <div class="b" id="quotapool" style="padding:0 10px 6px"></div>
-        <div class="b adminonly" id="quota"><span class="dim">读取中…</span></div>
+          <button class="act" id="q_refresh" style="margin-left:8px">刷新</button></div>
+        <div class="b" id="quota"><span class="dim">读取中…</span></div>
+        <div class="dim" style="font-size:calc(var(--fs)*0.78);margin-top:6px;line-height:1.6">
+          只读接口：<code>GET /api/upstream/quota</code>（Bearer）· 虚拟 key <code>gw-s01-svc-quota-vp01</code> · 限速 1 次/秒 · 服务端缓存 60 秒
+        </div>
+      </div>
+      <div class="box" style="margin-top:10px">
+        <div class="h">周期用量预测<span class="line"></span><span class="dim" id="fc_at"></span>
+          <button class="act" id="fc_refresh" style="margin-left:8px">刷新</button></div>
+        <div class="b">
+          <div class="fcgrid" id="fc_kpis"><span class="dim">读取中…</span></div>
+          <div class="fcpanel">
+            <div class="fcwrap"><svg class="fc" id="fc_chart" viewBox="0 0 900 240" preserveAspectRatio="none"></svg>
+              <div class="fctip" id="fc_tip"></div></div>
+            <div class="legend" style="margin-top:0">
+              <span class="lg"><i style="background:var(--cyan)"></i>实际累计</span>
+              <span class="lg"><i style="background:var(--amber)"></i>预测（&lt;100%）</span>
+              <span class="lg"><i style="background:#e5342b"></i>预测（超 100%）</span>
+              <span class="lg"><i style="background:rgba(255,176,0,.25)"></i>80% 区间</span>
+              <span class="lg"><i style="background:var(--red)"></i>额度用尽</span>
+            </div>
+          </div>
+          <div class="tblwrap" style="margin-top:6px"><table id="fc_tbl"></table></div>
+          <div class="hint" id="fc_note" style="margin-top:6px"></div>
+        </div>
       </div>
     </div>
+
+
 
     <!-- 按模型 -->
     <div id="sub-bymodel" class="hidden">
@@ -404,29 +381,11 @@
       </div>
     </div>
 
-    <!-- key × 模型 -->
-    <div id="sub-pair" class="hidden">
-      <div class="box">
-        <div class="h">每个 key 用什么模型<span class="line"></span><span id="pair_n" class="dim"></span></div>
-        <div class="b" style="padding:0 6px 6px"><div class="tblwrap"><table id="tbl_pair"></table></div></div>
-        <div class="hint" style="padding:0 10px 10px">「占该 key」＝ 这条（key, 模型）的请求数 ÷ 该 key 在本区间同口径下的总请求数。点表头可排序，适合核对「这个 key 是不是该只用某个模型」。</div>
-      </div>
-    </div>
-
     <!-- 按客户端 -->
     <div id="sub-bykey" class="hidden">
       <div class="box">
         <div class="h">按客户端 key<span class="line"></span><span id="k_n" class="dim"></span></div>
         <div class="b" style="padding:0 6px 6px"><div class="tblwrap"><table id="tbl_key"></table></div></div>
-      </div>
-    </div>
-
-    <!-- 按会话（session id） -->
-    <div id="sub-bysession" class="hidden">
-      <div class="box">
-        <div class="h">按会话<span class="line"></span><span id="s_n" class="dim"></span></div>
-        <div class="b" style="padding:0 6px 6px"><div class="tblwrap"><table id="tbl_session"></table></div></div>
-        <div class="hint" style="padding:0 10px 10px">会话 id ＝ 客户端发给上游的 <code>x-upstream-session</code>；点会话 id 可复制。空值与网关自动填的缺省 id（各 key 绑定的 session_id、供应商额外请求头里写死的会话 id）不纳入统计。该维度需要扫明细表，只在切到本页时计算。</div>
       </div>
     </div>
 
@@ -523,14 +482,6 @@
           <div class="field"><label>名称（英文，唯一）</label><input id="p_name" placeholder="myapi"></div>
           <div class="field"><label>客户端前缀（模型名 = 前缀/模型ID，默认同名称）</label><input id="p_prefix" placeholder="myapi"></div>
           <div class="field"><label>Base URL（写到 /v1 为止）</label><input id="p_url" placeholder="https://api.example.com/v1"></div>
-          <div class="field"><label>上游协议（这家供应商默认走哪种；留空＝逐模型自动探测。模型级可单独覆盖）</label>
-            <select id="p_fmt">
-              <option value="">自动探测（默认）</option>
-              <option value="chat">chat · /chat/completions</option>
-              <option value="responses">responses · /responses</option>
-              <option value="messages">messages · /messages（Anthropic）</option>
-              <option value="gemini">gemini · :generateContent（Google 原生）</option>
-            </select></div>
           <div class="field"><label>API key（写入 .env，不回显）</label><input id="p_key" type="password" placeholder="sk-..."></div>
           <div class="field"><label>key 环境变量名（留空自动）</label><input id="p_env" placeholder="MYAPI_API_KEY"></div>
           <div class="field"><label>User-Agent（可选，某些上游必须要浏览器 UA）</label>
@@ -540,28 +491,7 @@
               <option value="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36">Chrome 131 / macOS</option>
               <option value="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0">Firefox 133 / Windows</option>
             </datalist></div>
-          <div class="field"><label>额外请求头（JSON，可选）</label><input id="p_hdr" placeholder='{"x-upstream-session":"__SESSION__"}'></div>
-          <div class="field"><label>额度查询地址（可选；留空＝与 config.quota.usage.url 同源时自动用 base_url + /usage）</label>
-            <input id="p_quota" placeholder="https://upstream.example.com/v1/usage"></div>
-          <div class="field"><label>额度模式（official＝官方接口；local＝用本网关统计折算，适合火山引擎这类没有接口的订阅）</label>
-            <div style="display:flex;gap:6px">
-              <select id="p_qmode" style="flex:1">
-                <option value="">跟随（有地址就 official）</option>
-                <option value="official">official</option>
-                <option value="local">local</option>
-              </select>
-              <select id="p_qunit" style="width:120px">
-                <option value="tokens">tokens</option>
-                <option value="cost">cost（$）</option>
-                <option value="requests">requests</option>
-              </select>
-            </div></div>
-          <div class="grid2">
-            <div class="field"><label>额度数量（与上面单位一致；local 必填）</label><input id="p_qamount" placeholder="200000000"></div>
-            <div class="field"><label>统计周期（local）</label>
-              <select id="p_qcycle"><option value="month">月（默认）</option><option value="week">周</option><option value="day">日</option><option value="hour">小时</option></select></div>
-          </div>
-          <div class="field"><label>每月从几号起算（local，默认 1）</label><input id="p_qday" placeholder="1"></div>
+          <div class="field"><label>额外请求头（JSON，可选）</label><input id="p_hdr" placeholder='{"x-opencode-session":"__SESSION__"}'></div>
           <div class="field"><label>推理链回灌（chat↔responses 桥接时把 reasoning 项插回，保住思维链）</label>
             <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="p_echo" style="width:auto"> 开启 reasoning_echo</label></div>
           <div class="field"><label>默认推理档位（该供应商所有模型；逗号分隔，留空＝不干预）</label>
@@ -584,12 +514,12 @@
             </div></div>
           <div id="mm_status" class="hint"></div>
 
-          <div id="mm_panel" class="hidden mmblk bulk">
-            <div class="mmtag"><b>① 批量添加（勾选清单）</b><span class="dim">勾完点这块底部的「添加所选」</span><span class="hint" id="mm_selinfo"></span></div>
+          <div id="mm_panel" class="hidden" style="margin-top:10px">
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
               <button class="act" id="mm_all">全选</button>
               <button class="act" id="mm_none">清空</button>
               <input id="mm_search" placeholder="过滤…" style="max-width:200px">
+              <span class="hint" id="mm_selinfo"></span>
             </div>
             <div id="mm_list" style="max-height:300px;overflow:auto;border:1px solid var(--line);padding:6px"></div>
             <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
@@ -605,121 +535,22 @@
             </div>
           </div>
 
-          <div class="mmblk single">
-            <div class="mmtag"><b>② 手动单个添加（自己填模型 ID）</b><span class="dim">这里只认下面这个输入框，与上面的勾选无关</span></div>
-            <div class="field"><label>模型 ID（上游真实名字）</label><input id="mm_id" placeholder="upstream-model-id"></div>
-            <div class="field"><label>协议</label>
-              <select id="mm_fmt">
-                <option value="">自动探测（推荐）</option>
-                <option value="chat">chat（/chat/completions）</option>
-                <option value="responses">responses（/responses）</option>
-                <option value="messages">messages（Anthropic）</option>
-                <option value="gemini">gemini（Google 原生 generateContent）</option>
-              </select></div>
-            <div class="field"><label>推理档位（可选，逗号分隔；留空＝按探测结果/不干预）</label>
-              <input id="mm_efforts" placeholder="low, medium, high, max"></div>
-            <button class="act" id="mm_submit">添加 / 覆盖模型</button>
-            <div class="hint" style="margin-top:12px">协议留空＝自动探测：首次请求按 chat→responses→messages→gemini 依次试，成功即记住。<br>
-              模型已经在列表里也没关系——会用这里的配置覆盖它（协议留空＝清掉原有指定与探测结果，回到自动）。</div>
-          </div>
+          <div class="hint" style="margin:14px 0 8px;border-top:1px dotted var(--line2);padding-top:10px">手动单个添加</div>
+          <div class="field"><label>模型 ID（上游真实名字）</label><input id="mm_id" placeholder="grok-4.6"></div>
+          <div class="field"><label>协议</label>
+            <select id="mm_fmt">
+              <option value="">自动探测（推荐）</option>
+              <option value="chat">chat（/chat/completions）</option>
+              <option value="responses">responses（/responses）</option>
+              <option value="messages">messages（Anthropic）</option>
+              <option value="gemini">gemini（Google 原生 generateContent）</option>
+            </select></div>
+          <div class="field"><label>推理档位（可选，逗号分隔；留空＝按探测结果/不干预）</label>
+            <input id="mm_efforts" placeholder="low, medium, high, max"></div>
+          <button class="act" id="mm_submit">添加 / 覆盖模型</button>
+          <div class="hint" style="margin-top:12px">协议留空＝自动探测：首次请求按 chat→responses→messages→gemini 依次试，成功即记住。<br>
+            模型已经在列表里也没关系——会用这里的配置覆盖它（协议留空＝清掉原有指定与探测结果，回到自动）。</div>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= 上游组（多上游负载均衡 / 容灾） ================= -->
-  <section id="tab-pools" class="hidden">
-    <div class="box" style="margin-bottom:10px">
-      <div class="h">已有上游组<span class="line"></span><span class="dim" id="pl_sum"></span></div>
-      <div class="b" style="padding:0 6px 6px">
-        <div class="tblwrap"><table id="tbl_pools"></table></div>
-        <div class="hint" style="margin-top:8px">
-          「健康」是网关内存态：成员连续失败到阈值会进冷却，冷却期内只要还有别的成员就不会被选中（全挂才硬试）。
-          重启网关后清零。<b class="amber">没有绑定任何路由的组不会生效</b>。
-        </div>
-      </div>
-    </div>
-
-    <div class="box" id="pl_adminbox">
-      <div class="h"><span id="pl_title">新建上游组</span><span class="line"></span></div>
-      <div class="b">
-        <div id="pl_editinfo" class="hint hidden" style="margin-bottom:8px"></div>
-        <div class="grid2">
-          <div>
-            <div class="field"><label>组名（英文，唯一）</label><input id="pl_name" placeholder="pool-a"></div>
-            <div class="field"><label>策略</label>
-              <select id="pl_strategy">
-                <option value="sticky">sticky —— 同一客户端固定同一家（保 prompt 缓存 / 思维链）</option>
-                <option value="quota">quota —— 按「剩余额度最多」选，各自周期免对齐（多订阅推荐）</option>
-                <option value="drain">drain —— 到期优先：先烧最快到期的，烧到见底再换下一只（同厂商多订阅）</option>
-                <option value="failover">failover —— 恒用第一家，挂了才换（主备）</option>
-                <option value="rr">rr —— 按权重轮询（不保缓存）</option>
-                <option value="least">least —— 挑进行中请求最少的那家</option>
-              </select></div>
-            <div class="field"><label>负载均衡</label>
-              <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="pl_balance" style="width:auto" checked> 启用（关掉＝固定用第一个成员，只在它挂了/失败时才切换）</label></div>
-            <div class="grid2">
-              <div class="field"><label>冷却秒（失败后多久再试它）</label><input id="pl_cooldown" value="60"></div>
-              <div class="field"><label>失败阈值（连续几次进冷却）</label><input id="pl_maxfails" value="2"></div>
-            </div>
-            <div class="field"><label>额度差阈值（仅 quota：当前这家比最优差几个百分点才换）</label>
-              <input id="pl_margin" value="2" placeholder="2"></div>
-            <div class="field"><label>到期门槛（仅 drain：剩余额度低于此值就换下一只，单位 %）</label>
-              <div class="grid2">
-                <input id="pl_dm" value="3" placeholder="月度 3">
-                <input id="pl_dw" value="5" placeholder="周 5">
-              </div>
-              <div class="grid2" style="margin-top:6px">
-                <input id="pl_dr" value="5" placeholder="滚动 5">
-                <div class="dim" style="font-size:0.85em;align-self:center">月/周/滚动，三档都留余量</div>
-              </div></div>
-            <div class="field"><label>全挂时的提示模板（可选；{n}=成员数、{detail}=成员(状态)列表）</label>
-              <input id="pl_msg" placeholder="三家订阅都不可用（{detail}），请稍后重试"></div>
-            <div class="field"><label>允许普通用户加入（他们可以把自己的上游加进来，共享本组额度）</label>
-              <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="pl_userjoin" style="width:auto"> 开放加入</label></div>
-          </div>
-          <div>
-            <div class="field"><label>成员（权重越大分到越多；同一家只能出现一次）</label>
-              <div id="pl_members"></div>
-              <button class="act" id="pl_add" style="margin-top:2px">+ 添加成员</button></div>
-            <div class="field" style="border-top:1px dotted var(--line2);padding-top:10px">
-              <div class="hint">
-                组不绑路由：成员供应商现有的模型会被自动接管，<b>同一个模型名直接在这几家里均衡</b>（不需要指定谁提供哪个模型）。
-                成员里填的「能提供的模型」用来筛掉不支持的成员；留空则按该供应商现有路由自动判断。
-              </div>
-            </div>
-          </div>
-        </div>
-        <button class="act" id="pl_submit">保存上游组</button>
-        <button class="act" id="pl_cancel" style="display:none;margin-left:8px">取消编辑</button>
-        <span class="hint" style="margin-left:12px">保存后立即热加载；正在跑的请求不受影响</span>
-      </div>
-    </div>
-
-    <div class="box hidden" id="pl_userbox">
-      <div class="h">把我的供应商加进组<span class="line"></span><span class="dim">共享额度 · 只填自己的上游</span></div>
-      <div class="b">
-        <div class="hint" style="margin-bottom:10px">选一个管理员开放的组，填你自己的上游 API。加进去后你能用这个组里的模型；你的上游额度也会分给组里其他成员。<b>你的 API key 只写进服务器 .env，不会回显。</b></div>
-        <div class="grid2">
-          <div>
-            <div class="field"><label>目标组（只列管理员开放的组）</label><select id="up_pool"></select></div>
-            <div class="field"><label>显示名（例如 我的 OpenAI）</label><input id="up_name" placeholder="My OpenAI"></div>
-            <div class="field"><label>Base URL（写到 /v1 为止）</label><input id="up_url" placeholder="https://api.example.com/v1"></div>
-            <div class="field"><label>上游 API key</label><input id="up_key" type="password" placeholder="sk-..."></div>
-            <div class="field"><label>替代 User-Agent（默认已填；留空＝用上游默认，可能被 CF 拦成 1010）</label><input id="up_ua" list="ua_presets"></div>
-          </div>
-          <div>
-            <div class="field"><label>上游模型名（逗号分隔；也可先拉取再勾选）</label><input id="up_models" placeholder="gpt-4o-mini, gpt-4o"></div>
-            <div class="field" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-              <button class="act" id="up_fetch">从上游拉取模型</button>
-              <span class="hint" id="up_fetchinfo"></span>
-            </div>
-            <div id="up_list" class="kmodlist hidden"></div>
-            <div class="hint">模型会挂到你自己的前缀下（<code id="up_prefix_hint">u-你的名字-…/</code>）；组里同名模型会在这几家之间均衡。</div>
-          </div>
-        </div>
-        <button class="act" id="up_submit">加入组</button>
-        <span class="hint" id="up_info" style="margin-left:10px"></span>
       </div>
     </div>
   </section>
@@ -729,119 +560,38 @@
     <div class="box" style="margin-bottom:10px">
       <div class="h">已有 key<span class="line"></span></div>
       <div class="b" style="padding:0 6px 6px"><div class="tblwrap"><table id="tbl_keys"></table></div></div>
-      <div class="hint" style="padding:0 10px 10px">「显示 / 复制」需要登录；普通用户只能操作自己的 key。key 值不会随统计快照下发，需要时才单独取。<br>
-        「上游组」＝ 这个 key 绑定哪些组（不绑＝不限制）。绑了之后，它拉 <code>/v1/models</code> 只看到这些组里的模型，请求组外模型直接 403 <code>model_not_allowed</code>（单模型探活 404）；适合把同一台网关按订阅分组出租/隔离。<br>
-        「可用模型」＝ 在（绑定的组 ∪ 全部）范围内再挑具体模型（默认全部）。限定后同样 403/404。</div>
+      <div class="hint" style="padding:0 10px 10px">「显示 / 复制」只在看板域名（已登录）或本机可用；key 值不会随统计快照下发，需要时才单独取。</div>
     </div>
     <div class="box">
       <div class="h">新建 key<span class="line"></span></div>
       <div class="b">
         <div class="field" style="max-width:420px"><label>名称（例如 codex / claude-code / st）</label><input id="k_name" placeholder="codex"></div>
-        <div class="field" style="max-width:520px"><label>替代 User-Agent（默认已填；上游只认浏览器 UA，非浏览器 UA 会被 CF 拦成 1010）</label><input id="k_ua" list="ua_presets"><div class="hint">留空＝用供应商自己配的 UA。这个 key 的会话 ID 会自动生成并与 key 绑定（供应商里写 <code>__SESSION__</code> 时解析成它）。</div></div>
         <button class="act" id="k_submit">生成</button>
         <div id="k_out" class="hint" style="margin-top:12px"></div>
-        <div class="hint" style="margin-top:8px">普通用户新建的 key 自动限定在自己加入的上游组内；管理员新建默认可用全部模型，之后可在表格里点「可用模型」限制。</div>
       </div>
     </div>
   </section>
 
-  <!-- ================= 多用户模式（默认隐藏，顶栏「多用户」开关打开才显示） ================= -->
-  <section id="tab-users" class="hidden">
-    <div class="box" style="margin-bottom:10px">
-      <div class="h">按用户用量<span class="line"></span><span class="dim" id="um_hint"></span></div>
-      <div class="b" style="padding:0 6px 6px">
-        <div class="tblwrap"><table id="tbl_um"></table></div>
-        <div class="hint" style="margin-top:8px">归属取每个客户端 key 的 <code>owner</code>；没有 owner 的 key 归到「未归属」。数字随上方统计口径（时间范围 / 走上游组·网关直接转发）变化。</div>
-      </div>
-    </div>
-    <div class="box" style="margin-bottom:10px">
-      <div class="h">面板用户<span class="line"></span><span class="dim" id="us_sum"></span></div>
-      <div class="b" style="padding:0 6px 6px">
-        <div class="tblwrap"><table id="tbl_users"></table></div>
-        <div class="hint" style="margin-top:8px">普通用户只能看到：概览（仅自己加入的组 + 自己 key 的用量）、自己的 key、自己加入/可加入的上游组。账号只能由管理员创建。</div>
-      </div>
-    </div>
-    <div class="box">
-      <div class="h">新建 / 重置用户<span class="line"></span><span class="dim">同名＝更新角色 / 重置密码</span></div>
-      <div class="b">
-        <div class="grid3">
-          <div class="field"><label>用户名</label><input id="us_name" placeholder="alice"></div>
-          <div class="field"><label>密码（≥8 位；留空＝不改）</label><input id="us_pass" type="password" autocomplete="new-password"></div>
-          <div class="field"><label>角色</label>
-            <select id="us_role"><option value="user">普通用户</option><option value="admin">管理员</option></select></div>
-        </div>
-        <button class="act" id="us_submit">保存用户</button>
-        <button class="act" id="us_cancel" style="display:none;margin-left:8px">取消编辑</button>
-        <span class="hint" id="us_info" style="margin-left:10px"></span>
-      </div>
-    </div>
-  </section>
+  <footer class="foot">
+    <a href="https://btop.xiaomanhome.cc/" target="_blank" rel="noopener">性能监控</a>
+    <a href="https://dl.xiaomanhome.cc/" target="_blank" rel="noopener">下载站</a>
+    <a href="https://todayfood.xiaomanhome.cc/" target="_blank" rel="noopener">今天吃什么</a>
+    <a href="https://aipose.xiaomanhome.cc/settings" target="_blank" rel="noopener">绘图姿势参考站</a>
+    <a href="https://img.xiaomanhome.cc/" target="_blank" rel="noopener">图像生成</a>
+    <a href="https://trpg.xiaomanhome.cc/" target="_blank" rel="noopener">在线跑团</a>
+    <a href="https://lfworld.xiaomanhome.cc/" target="_blank" rel="noopener">龙飞世界</a>
+    <a href="https://lfgame.xiaomanhome.cc/" target="_blank" rel="noopener">龙飞卡牌</a>
+    <a href="https://st.xiaomanhome.cc/" target="_blank" rel="noopener">酒馆</a>
+  </footer>
 
-  <!-- 客户端 key 的模型白名单弹层 -->
-  <div id="kmod_ovl" class="ovl hidden">
-    <div class="ovlbox">
-      <div class="ovlh"><span id="kmod_title">可用模型</span><span class="line"></span><button class="act" id="kmod_x">关闭</button></div>
-      <div class="ovlb">
-        <div class="kmodbar">
-          <input id="kmod_q" placeholder="搜索模型…">
-          <button class="act" id="kmod_all">全选当前</button>
-          <button class="act" id="kmod_none">清空</button>
-          <span id="kmod_cnt" class="dim"></span>
-        </div>
-        <div id="kmod_list" class="kmodlist"></div>
-      </div>
-      <div class="ovlf">
-        <div class="hint" style="margin-right:auto">不勾任何模型＝全部可用（默认）。全选也按「全部」存，之后新加的模型自动可用。</div>
-        <button class="act" id="kmod_save">保存</button>
-      </div>
-    </div>
-  </div>
-  <!-- 客户端 key 的上游组绑定弹层 -->
-  <div id="kpool_ovl" class="ovl hidden">
-    <div class="ovlbox" style="max-width:540px">
-      <div class="ovlh"><span id="kpool_title">绑定的上游组</span><span class="line"></span><button class="act" id="kpool_x">关闭</button></div>
-      <div class="ovlb">
-        <div class="hint" style="margin-bottom:8px">
-          不勾＝不限制（可用全部模型，旧行为）。勾了之后，这个 key 的模型列表和请求范围都只限这些组里的模型；
-          「可用模型」再在这个范围内二次筛选。
-        </div>
-        <div id="kpool_list" class="kmodlist"></div>
-      </div>
-      <div class="ovlf">
-        <span class="hint" id="kpool_cnt" style="margin-right:auto"></span>
-        <button class="act" id="kpool_save">保存</button>
-      </div>
-    </div>
-  </div>
-  <!-- key × 模型 明细弹层 -->
-  <div id="dist_ovl" class="ovl hidden">
-    <div class="ovlbox" style="max-width:720px">
-      <div class="ovlh"><span id="dist_title">模型分布</span><span class="line"></span><button class="act" id="dist_x">关闭</button></div>
-      <div class="ovlb"><div class="tblwrap"><table id="tbl_dist"></table></div></div>
-    </div>
-  </div>
-
-</div>
-<div id="login" class="loginmask hidden">
-  <div class="loginbox">
-    <div class="t">LLM GATEWAY</div>
-    <div class="s">登录后管理你的 key、上游组与用量</div>
-    <div class="s" id="lg_api" style="display:none">API 端点：<code id="lg_api_url"></code></div>
-    <div class="field"><label>用户名</label><input id="lg_user" autocomplete="username" placeholder="用户名"></div>
-    <div class="field"><label>密码</label><input id="lg_pass" type="password" autocomplete="current-password" placeholder="密码"></div>
-    <button class="act" id="lg_btn" style="width:100%">登录</button>
-    <div class="err" id="lg_msg"></div>
-    <div class="s" style="margin:10px 0 0">没有账号？找管理员开一个。管理员也可用原有面板 Basic 密码直接进入。</div>
-  </div>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let TOKEN = localStorage.getItem('gw_token') || '';
-let ME = null;                                   // { name, role, via }
-let API_BASE = '';                               // 网关 API 端点（/healthz 下发的 config.api_base）
+let KEY = localStorage.getItem('gw_key') || '';
 let STATS = null, CONF = null, TAB = 'stats';
+$('key').value = KEY;
 
 /* ---------- 字号 ---------- */
 function applyFs(v) {
@@ -853,15 +603,24 @@ document.querySelectorAll('.fsgroup button[data-fs]').forEach(b => b.onclick = (
   localStorage.setItem('gw_fs', b.dataset.fs); applyFs(b.dataset.fs);
 });
 
-/* ---------- 亮/暗主题 ---------- */
-function applyTheme(v) {
-  const t = v === 'light' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = t;
-  document.querySelectorAll('.fsgroup button[data-thm]').forEach(b => b.classList.toggle('on', b.dataset.thm === t));
-  localStorage.setItem('gw_theme', t);
+/* ---------- 配色（暖砂/青瓷/夜航，暗亮跟随系统） ---------- */
+const MQ = window.matchMedia('(prefers-color-scheme: light)');
+let MODE = localStorage.getItem('gw_mode') || (MQ.matches ? 'light' : 'dark');
+function applyMode() {
+  document.documentElement.dataset.theme = MODE === 'light' ? 'light' : 'dark';
+  document.querySelectorAll('.fsgroup button[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === MODE));
 }
-applyTheme(localStorage.getItem('gw_theme') || 'dark');
-document.querySelectorAll('.fsgroup button[data-thm]').forEach(b => b.onclick = () => applyTheme(b.dataset.thm));
+function applyScheme(v) {
+  const sc = ['sand', 'celadon', 'midnight'].includes(v) ? v : 'sand';
+  document.documentElement.dataset.scheme = sc;
+  applyMode();
+  document.querySelectorAll('.fsgroup button[data-sch]').forEach(b => b.classList.toggle('on', b.dataset.sch === sc));
+  localStorage.setItem('gw_scheme', sc);
+}
+applyMode();
+applyScheme(localStorage.getItem('gw_scheme') || 'sand');
+document.querySelectorAll('.fsgroup button[data-sch]').forEach(b => b.onclick = () => applyScheme(b.dataset.sch));
+document.querySelectorAll('.fsgroup button[data-mode]').forEach(b => b.onclick = () => { MODE = b.dataset.mode; localStorage.setItem('gw_mode', MODE); applyMode(); });
 
 /* ---------- 小工具 ---------- */
 const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n ?? 0);
@@ -890,7 +649,7 @@ function setProviderInStats(name, on) {
 }
 function excludedProviders() {                       // 依赖 CONF（供应商名 + base_url）
   const set = new Set();
-  if (!CONF || !ADMIN()) return set;                  // 普通用户不做「参与统计」剔除（只看自己 key）
+  if (!CONF) return set;
   for (const p of (CONF.providers || [])) if (!providerInStats(p.name, p.base_url)) set.add(p.name);
   return set;
 }
@@ -998,176 +757,46 @@ function drawTable(el) {
 }
 async function api(path, body) {
   const h = { 'Content-Type': 'application/json' };
-  if (TOKEN) h['x-gw-token'] = TOKEN;                  // 会话鉴权；不再用网关 key 碰面板 API
+  if (KEY) h['x-api-key'] = KEY;                       // 不用 Authorization，避免与面板 Basic 冲突
   const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: h, body: body ? JSON.stringify(body) : undefined });
   const t = await r.text();
   let j = null; try { j = JSON.parse(t); } catch { }
-  if (r.status === 401) { if (!LEGACY) showLogin('登录已失效，请重新登录'); }
   if (!r.ok) throw new Error((j?.error?.message) || ('HTTP ' + r.status));
   return j;
-}
-/* ---------- 登录 / 角色 ---------- */
-const ADMIN = () => !!(ME && ME.role === 'admin');
-function showLogin(msg) {
-  ME = null;
-  $('login').classList.remove('hidden');
-  $('lg_msg').textContent = msg || '';
-  document.querySelectorAll('.adminonly').forEach(el => el.classList.add('hidden'));
-  $('me_chip').classList.add('hidden');
-  $('logout').classList.add('hidden');
-  TAB = 'stats';
-  document.querySelectorAll('.nav button[data-tab]').forEach(x => x.classList.toggle('on', x.dataset.tab === 'stats'));
-  ['stats', 'models', 'providers', 'pools', 'keys', 'users'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== 'stats'));
-}
-async function doLogin() {
-  const u = $('lg_user').value.trim(), p = $('lg_pass').value;
-  if (!u || !p) { $('lg_msg').textContent = '用户名和密码都要填'; return; }
-  $('lg_btn').disabled = true;
-  try {
-    const r = await fetch('/api/auth/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: p }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j?.error?.message || ('HTTP ' + r.status));
-    TOKEN = j.token;
-    localStorage.setItem('gw_token', TOKEN);
-    document.cookie = 'gw_panel_logout=; path=/; max-age=0; samesite=lax';   // 恢复 Basic 后备
-    $('lg_pass').value = '';
-    $('lg_msg').textContent = '';
-    await boot();
-  } catch (e) {
-    $('lg_msg').textContent = e.message;
-  } finally { $('lg_btn').disabled = false; }
-}
-$('lg_btn').onclick = doLogin;
-$('lg_pass').onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
-$('lg_user').onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
-$('logout').onclick = async () => {
-  try { await api('/api/auth/logout', {}); } catch { }
-  document.cookie = 'gw_panel_logout=1; path=/; max-age=31536000; samesite=lax';   // 服务端 Set-Cookie 之外再兜一层
-  TOKEN = ''; localStorage.removeItem('gw_token');
-  ME = null;
-  showLogin('已登出');
-  $('lg_user').value = ''; $('lg_pass').value = '';
-};
-function applyRole() {
-  document.querySelectorAll('.adminonly').forEach(el => el.classList.toggle('hidden', !ADMIN()));
-  $('me_chip').classList.toggle('hidden', !ME);
-  $('logout').classList.toggle('hidden', !ME);       // 会话 / Basic 都显示；Basic 由登出 cookie 抑制
-  if (ME) {
-    $('me_name').textContent = ME.name;
-    $('me_role').textContent = ME.role === 'admin' ? '管理员' : '普通用户';
-    $('me_role').className = ME.role === 'admin' ? 'roleuser' : 'roleuser';
-  }
-  const ktab = document.querySelector('.nav button[data-tab="keys"]');
-  if (ktab) ktab.textContent = ADMIN() ? '客户端 key' : '我的 key';
-  $('pl_adminbox').classList.toggle('hidden', !ADMIN());
-  $('pl_userbox').classList.toggle('hidden', !!ADMIN());
-  // 普通用户能看：概览 / 按模型 / 最近请求（三者都只统计自己名下的 key）；其它子页拉回概览
-  const USER_SUBS = ['overview', 'bymodel', 'recent'];
-  if (!ADMIN() && !USER_SUBS.includes(SUB)) { SUB = 'overview'; syncSub(); }
-  renderUmode();                                     // 多用户入口：默认关，只有模式打开才显示页签
 }
 
 /* ---------- 导航 ---------- */
 let SUB = localStorage.getItem('gw_sub') || 'overview';
 function syncSub() {
   document.querySelectorAll('#subnav button[data-sub]').forEach(x => x.classList.toggle('on', x.dataset.sub === SUB));
-  ['overview', 'bymodel', 'byprovider', 'bykey', 'bysession', 'pair', 'recent'].forEach(s => $('sub-' + s).classList.toggle('hidden', s !== SUB));
+  ['overview', 'bymodel', 'byprovider', 'bykey', 'recent'].forEach(s => $('sub-' + s).classList.toggle('hidden', s !== SUB));
   $('subnav').classList.toggle('hidden', TAB !== 'stats');
   $('rangebar').classList.toggle('hidden', SUB === 'recent');
 }
 document.querySelectorAll('#subnav button[data-sub]').forEach(b => b.onclick = () => {
   SUB = b.dataset.sub; localStorage.setItem('gw_sub', SUB); syncSub();
   if (SUB === 'recent') loadRequests();
-  else if (SUB === 'bysession') refreshStats();      // 该维度按需拉取（扫明细表），切进来立刻补一次，不等 2s 轮询
 });
 document.querySelectorAll('.nav button[data-tab]').forEach(b => b.onclick = () => {
-  if (!ADMIN() && b.classList.contains('adminonly')) return;
-  if (b.dataset.tab === 'users' && !UMODE) return;    // 单用户界面下不开放多用户页
   TAB = b.dataset.tab;
   document.querySelectorAll('.nav button[data-tab]').forEach(x => x.classList.toggle('on', x === b));
-  ['stats', 'models', 'providers', 'pools', 'keys', 'users'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== TAB));
+  ['stats', 'models', 'providers', 'keys'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== TAB));
   syncSub();
   if (TAB === 'stats') { refreshStats(); return; }
   loadConfig(true).then(() => {
     if (TAB === 'models') renderModels();
     if (TAB === 'providers') renderProviders();
-    if (TAB === 'pools') renderPools();
     if (TAB === 'keys') renderKeys();
-    if (TAB === 'users') { renderUsers(); renderUmUsage(); }
   });
 });
-
-/* ---------- 多用户模式（隔离入口，默认关 ＝ 单用户界面） ----------
-   纯界面开关：只决定「多用户」页签是否出现在导航里，不改 config.json、
-   不影响 /v1 转发与任何后端逻辑。状态存本浏览器 localStorage。 */
-let UMODE = localStorage.getItem('gw_umode') === '1';
-function renderUmode() {
-  const b = $('um_toggle');
-  if (b) {
-    b.textContent = '多用户：' + (UMODE ? '开' : '关');
-    b.classList.toggle('on', UMODE);
-    b.classList.toggle('off', !UMODE);
-  }
-  const nav = $('nav_users');
-  if (nav) nav.classList.toggle('hidden', !(ADMIN() && UMODE));
-  // 关掉时若正停在多用户页，退回用量统计，避免停在空白页
-  if (!UMODE && TAB === 'users') {
-    TAB = 'stats';
-    document.querySelectorAll('.nav button[data-tab]').forEach(x => x.classList.toggle('on', x.dataset.tab === 'stats'));
-    ['stats', 'models', 'providers', 'pools', 'keys', 'users'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== 'stats'));
-    syncSub();
-    refreshStats();
-  }
-}
-$('um_toggle').onclick = () => {
-  if (!ADMIN()) return;                              // 按钮本来就是 adminonly 隐藏，这里再挡一道（防控制台直接调用）
-  UMODE = !UMODE;
-  localStorage.setItem('gw_umode', UMODE ? '1' : '0');
-  renderUmode();
-  if (UMODE) { const n = $('nav_users'); if (n && typeof n.onclick === 'function') n.onclick(); }
-  else toast('已切回单用户界面');
-};
-// 按用户用量概览：/api/stats 的 by_key 按 key 归属（owner）聚合，纯前端完成，不改后端
-function renderUmUsage() {
-  if (!CONF || !ADMIN()) return;
-  const ownerOf = {};
-  (CONF.keys || []).forEach(k => { ownerOf[k.name] = String(k.owner || '').trim(); });
-  const blank = () => ({ requests: 0, in: 0, out: 0, cached: 0, ms: 0, ttft: 0, keys: [] });
-  const agg = {};
-  const bk = (STATS && STATS.by_key) || {};
-  for (const [kn, v] of Object.entries(bk)) {
-    const who = ownerOf[kn] || '未归属';
-    const a = agg[who] || (agg[who] = blank());
-    for (const f of ['requests', 'in', 'out', 'cached', 'ms', 'ttft']) a[f] += Number(v[f]) || 0;
-    a.keys.push(kn);
-  }
-  (CONF.users || []).forEach(u => { if (!agg[u.name]) agg[u.name] = blank(); });
-  const ent = Object.entries(agg).sort((a, b) => b[1].requests - a[1].requests);
-  const rate = (a) => { const gen = a.ms - a.ttft; return (a.out > 0 && gen > 0) ? a.out / (gen / 1000) : 0; };
-  const rows = [], vals = [];
-  for (const [who, a] of ent) {
-    rows.push([
-      esc(who), fmt(a.requests), fmt(a.in), fmt(a.out),
-      a.in ? (a.cached / a.in * 100).toFixed(1) + '%' : '—',
-      tpsTxt(rate(a)),
-      (a.keys || []).map(esc).join(', ') || '<span class="dim">—</span>',
-    ]);
-    vals.push([a.requests, a.requests, a.in, a.out, a.in ? a.cached / a.in : 0, rate(a), a.keys.length]);
-  }
-  table($('tbl_um'), ['用户', '请求', '输入', '输出', '缓存命中', 'tok/s', '名下 key'], rows, '暂无用量', vals, [6], [24]);
-  $('um_hint').textContent = `${ent.length} 个归属 · ${Object.keys(bk).length} 个 key`;
-}
+$('savekey').onclick = () => { KEY = $('key').value.trim(); localStorage.setItem('gw_key', KEY); refreshStats(); };
 
 /* ---------- 网关总开关 ---------- */
 let ENABLED = true;
 function renderToggle() {
   const b = $('gw_toggle');
   b.textContent = ENABLED ? '网关：开' : '网关：关';
-  b.classList.toggle('on', ENABLED);
-  b.classList.toggle('off', !ENABLED);
+  b.className = 'gwtoggle ' + (ENABLED ? 'on' : 'off');
   $('offbanner').classList.toggle('hidden', ENABLED);
 }
 /* ---------- 抓包开关（热生效，不用重启） ---------- */
@@ -1176,8 +805,7 @@ function renderCap(c) {
   if (c) CAP = c;
   const b = $('cap_toggle');
   b.textContent = '抓包：' + (CAP.on ? '开' : '关') + (CAP.on && CAP.bytes ? ` ${fmtB(CAP.bytes)}` : '');
-  b.classList.toggle('on', !!CAP.on);
-  b.classList.toggle('off', !CAP.on);
+  b.className = 'gwtoggle ' + (CAP.on ? 'on' : 'off');
   b.title = CAP.on
     ? `正在把客户端【完整请求体】写入 temp/capture-*.jsonl\n${CAP.files || 0} 个文件 / 合计 ${fmtB(CAP.bytes)}${CAP.last ? '\n最后写入 ' + new Date(CAP.last).toLocaleString('zh-CN', { hour12: false }) : ''}\n超过 3 天的自动 gzip 归档`
     : '未抓包。排查「客户端说上下文不对」时才需要打开（会把完整请求体写盘）';
@@ -1207,8 +835,6 @@ $('reload').onclick = () => { refreshStats(); loadConfig(true).then(() => {
 
 /* ---------- 用量统计：时间口径 ---------- */
 let RANGE = localStorage.getItem('gw_range') || 'all';
-// 统计口径：pool＝走上游组的请求（默认）；direct＝没有组、网关直连供应商的请求
-let DATA_MODE = localStorage.getItem('gw_mode') === 'direct' ? 'direct' : 'pool';
 let STACK_KEY = localStorage.getItem('gw_stack_key') || '';      // '' = 全部 key 聚合分色；否则只画该 key
 const SKEYS = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7', '--s8'];
 const DAY = 86400e3;
@@ -1240,22 +866,16 @@ function fmtDT(ts) {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 function syncRange() {
-  document.querySelectorAll('#rangebar .rbtn').forEach(b => { if (b.dataset.rng) b.classList.toggle('on', b.dataset.rng === RANGE); });
+  document.querySelectorAll('#rangebar .rbtn').forEach(b => b.classList.toggle('on', b.dataset.rng === RANGE));
   $('rng_custom').classList.toggle('hidden', RANGE !== 'custom');
 }
-function syncMode() {
-  document.querySelectorAll('#modebtns .rbtn').forEach(b => b.classList.toggle('on', (b.dataset.mode || 'pool') === DATA_MODE));
-}
-function rangeQuery(withSessions) {
+function rangeQuery() {
   const w = rangeWindow(RANGE, Date.now());
   const p = ['tz=' + (-new Date().getTimezoneOffset())];
   if (w.since != null) p.push('since=' + w.since);
   if (w.until != null) p.push('until=' + w.until);
   if (RANGE_UNIT[RANGE]) p.push('unit=' + RANGE_UNIT[RANGE]);      // 指定按小时/按日期分桶
   p.push('dim=key');                                               // 柱状图按客户端 key 分色
-  p.push('mode=' + DATA_MODE);                                     // pool＝走上游组 / direct＝网关直接转发
-  // 「按会话」要扫明细表，只在切到本页 / 手动刷新时算，2 秒轮询不再带（原来说的是按需，实际每 2 秒都在全量扫）
-  if (withSessions) p.push('sessions=1');
   return p.join('&');
 }
 function rangeInfoText(d) {
@@ -1279,7 +899,6 @@ $('stack_key').onchange = () => {
   refreshStats();
 };
 document.querySelectorAll('#rangebar .rbtn').forEach(b => b.onclick = () => {
-  if (b.dataset.mode) { DATA_MODE = b.dataset.mode === 'direct' ? 'direct' : 'pool'; localStorage.setItem('gw_mode', DATA_MODE); syncMode(); refreshStats(); return; }
   RANGE = b.dataset.rng; localStorage.setItem('gw_range', RANGE); syncRange(); refreshStats();
 });
 $('rng_apply').onclick = () => {
@@ -1292,88 +911,16 @@ $('rng_apply').onclick = () => {
   syncRange(); refreshStats();
 };
 
-/* ---------- 官方总量（柱状图叠加线，仅 5h/本周/本月） ---------- */
-// 数据来自 /api/official/usage（网关转调上游控制台的用量接口）。官方是账号全量口径
-// （含不经本网关的直连流量），与本地统计不是同一批数据 —— 所以曲线用「独立刻度」，只在线下图例给合计与峰值，
-// 避免与柱子的纵轴读数混淆。
-let OFFICIAL = null, OFFICIAL_KEY = '', OFFICIAL_AT = 0;
-const OFFICIAL_RANGES = ['5h', 'week', 'month'];
-async function refreshOfficial() {
-  if (!OFFICIAL_RANGES.includes(RANGE)) { OFFICIAL = null; return; }
-  const tz = -new Date().getTimezoneOffset();
-  const key = RANGE + '|' + tz;
-  if (OFFICIAL && OFFICIAL_KEY === key && Date.now() - OFFICIAL_AT < 30000) return;   // 30s 节流（服务端另有 30s 缓存）
-  try { OFFICIAL = await api(`/api/official/usage?range=${RANGE}&tz=${tz}`); }
-  catch (e) { OFFICIAL = { ok: false, error: e.message }; }
-  OFFICIAL_KEY = key; OFFICIAL_AT = Date.now();
-}
-function renderOfficial(ser, isDay) {
-  const svg = $('ovline'), lg = $('ovlegend');
-  if (!svg || !lg) return;
-  svg.innerHTML = '';
-  const head = '<span class="lg"><i style="background:var(--cyan);width:14px;height:2px"></i>官方总量';
-  if (!OFFICIAL_RANGES.includes(RANGE)) { lg.innerHTML = `${head}<span class="dim">：只在「最近 5 小时 / 本周 / 本月」口径显示</span></span>`; return; }
-  if (!OFFICIAL) { lg.innerHTML = `${head}<span class="dim">：读取中…</span></span>`; return; }
-  if (!OFFICIAL.ok) { lg.innerHTML = `${head}<span class="dim">：${esc(OFFICIAL.error || '读取失败')}</span></span>`; return; }
-  const pts = OFFICIAL.points || [];
-  if (!ser || !ser.length || !pts.length) { lg.innerHTML = `${head}<span class="dim">：该窗口官方无数据</span></span>`; return; }
-  const step = ser[1] ? ser[1].ts - ser[0].ts : 3600e3;
-  const tzMs = -new Date().getTimezoneOffset() * 60000;
-  const bucketOf = (ts) => Math.floor((ts + tzMs) / step) * step - tzMs;      // 与柱子的桶对齐（含多天合并）
-  const m = new Map();
-  for (const p of pts) { const bk = bucketOf(p.ts); m.set(bk, (m.get(bk) || 0) + (p.tokens || 0)); }
-  const inWin = (ts) => ts + step > OFFICIAL.since && ts <= OFFICIAL.until;   // 窗口内没有记录＝官方 0 用量；窗口外＝断线
-  const vals = ser.map(b => inWin(b.ts) ? (m.get(b.ts) || 0) : null);
-  const maxV = Math.max(1, ...vals.filter(v => v != null));
-  const n = ser.length;
-  const xy = vals.map((v, i) => v == null ? null : [(i + 0.5) / n * 100, 100 - Math.min(100, v / maxV * 100)]);
-  const segs = []; let cur = [];
-  for (const p of xy) { if (p) cur.push(p); else { if (cur.length) segs.push(cur); cur = []; } }
-  if (cur.length) segs.push(cur);
-  svg.innerHTML = segs.map(s => s.length > 1
-    ? `<polyline points="${s.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ')}"></polyline>`
-    : `<circle cx="${s[0][0].toFixed(2)}" cy="${s[0][1].toFixed(2)}" r="0.9"></circle>`).join('');
-  const total = vals.reduce((a, v) => a + (v || 0), 0);
-  const meta = OFFICIAL.meta || {};
-  lg.innerHTML = `${head}<span class="dim">：合计 ${fmt(total)} tokens · 峰值 ${fmt(maxV)}/${isDay ? '天' : 'h'}`
-    + ` · ${meta.raw_bucket === 'hour' ? '官方小时数据' : '官方数据'}（独立刻度）`
-    + (meta.segments > 1 ? ` · 跨 ${meta.segments} 个自然月拼接` : '') + '</span></span>';
-}
-
 /* ---------- 用量统计 ---------- */
-let STATS_SEQ = 0;                                 // 并发保护：只有最后一次请求的结果能落盘（M14）
-async function refreshStats(full = true) {
-  if (!ME || TAB !== 'stats') return;
-  const seq = ++STATS_SEQ;
-  let got;
-  try {
-    [got] = await Promise.all([
-      api('/api/stats?' + rangeQuery(!!full && SUB === 'bysession')),
-      refreshOfficial(),               // 官方总量：只在 5h/本周/本月拉，内部吞错，不拖累主流程
-    ]);
-  } catch (e) {
-    if (seq !== STATS_SEQ) return;                   // 过期请求的失败也别覆盖新状态
-    $('status').textContent = e.message; $('dot').className = 'dot bad'; return;
-  }
-  if (seq !== STATS_SEQ) return;                   // 期间又发起了更新的请求 → 丢弃这次（慢的旧响应别覆盖新口径）
-  STATS = got;
+async function refreshStats() {
+  if (TAB !== 'stats') return;
+  try { STATS = await api('/api/stats?' + rangeQuery()); }
+  catch (e) { $('status').textContent = e.message; $('dot').className = 'dot bad'; return; }
   const d = STATS;
   $('dot').className = 'dot ok';
   if (d.config && typeof d.config.enabled === 'boolean') { ENABLED = d.config.enabled; renderToggle(); }
   if (d.config && d.config.capture) renderCap(d.config.capture);
-  // 口径提示：当前这一侧有多少条、另一侧有多少条（切到没数据的一侧时给个明确说法）
-  const mc = d.mode_counts || {};
-  const curN = mc[DATA_MODE] || 0, otherN = mc[DATA_MODE === 'pool' ? 'direct' : 'pool'] || 0;
-  $('mode_hint').innerHTML = ADMIN()
-    ? `当前口径 <b>${fmt(curN)}</b> 条<span class="dim"> · ${DATA_MODE === 'pool' ? '直连' : '上游组'} ${fmt(otherN)} 条</span>`
-      + (curN === 0 && otherN > 0 ? ` <span class="amber">— 这一侧还没数据，上面切一下即可</span>` : '')
-    : `<span class="dim">只统计我名下 key 的请求</span>`;
-  $('status').innerHTML = `<span class="green">在线</span>` + (() => {
-    const u = API_BASE || (d.config && d.config.api_base) || '';
-    return u ? ` <code class="apiurl" title="网关 API 端点（点一下复制）">${esc(u)}</code>` : '';
-  })();
-  const apiEl = document.querySelector('#status .apiurl');
-  if (apiEl) apiEl.onclick = copyApiBase;
+  $('status').innerHTML = `<span class="green">在线</span> <span class="dim">${esc(d.config.listen?.host)}:${d.config.listen?.port}</span>`;
   if (!CONF) loadConfig();                        // 统计范围依赖 CONF（供应商 base_url / 前缀映射）
   const excl = excludedProviders();
   const t = statsTotals(d, excl);                 // 概览瓦片：剔除「不参与统计」的供应商
@@ -1448,7 +995,6 @@ async function refreshStats(full = true) {
   const astep = Math.max(1, Math.ceil(ser.length / 6));
   $('axis').innerHTML = ser.filter((_, i) => i % astep === 0).map(x => `<span>${labAxis(x.ts)}</span>`).join('') || '<span>暂无数据</span>';
   $('h24s').textContent = `峰值 ${fmt(max)} tokens/${isDay ? '天' : 'h'}`;
-  renderOfficial(ser, isDay);          // 官方总量叠加线（只有 5h/本周/本月有数据）
 
   const H9 = ['请求', '输入', '输出', 'tok/s', '字节(↑/↓)', '缓存', '命中', 'TTFT', '总时长', '推理'];   // 第 0 列是名称，各表不同
   const head = (name) => [name, ...H9];
@@ -1467,148 +1013,8 @@ async function refreshStats(full = true) {
   $('pv_n').textContent = `${Object.keys(byProv).length} 个上游${excl.size ? `（已排除 ${excl.size} 个）` : ''}`;
   $('k_n').textContent = `${Object.keys(d.by_key).length} 个 key`;
   const mP = rowsOf(byProv); table($('tbl_provider'), head('上游'), mP.rows, '', mP.vals, [0]);
-  const mK = rowsOf(d.by_key);
-  const kEnt = Object.entries(d.by_key);
-  const kRows = mK.rows.map((r, i) => [r[0], distCell(kEnt[i][0]), ...r.slice(1)]);
-  const kVals = mK.vals.map((v, i) => [v[0], (d.by_key_model && d.by_key_model[kEnt[i][0]] || []).length, ...v.slice(1)]);
-  table($('tbl_key'), ['key', '模型分布', ...H9], kRows, '暂无', kVals, [0, 1], 24);
-  document.querySelectorAll('[data-dist]').forEach(el => el.onclick = () => openKeyDist(el.dataset.dist));
-  renderPoolUsage(d);
-  // key × 模型 交叉表（扁平：一行一个 key×模型，可排序）
-  const pairMap = d.by_key_model || {};
-  const pRows = [], pVals = [];
-  for (const [k, arr] of Object.entries(pairMap)) {
-    const tot = arr.reduce((s, x) => s + (x.requests || 0), 0) || 1;
-    for (const x of arr) {
-      pRows.push([esc(k), esc(x.model), fmt(x.requests), (x.requests / tot * 100).toFixed(1) + '%',
-        fmt(x.in), fmt(x.out), x.in ? (x.cached / x.in * 100).toFixed(0) + '%' : '—']);
-      pVals.push([k, x.model, x.requests, x.requests / tot, x.in, x.out, x.in ? x.cached / x.in : 0]);
-    }
-  }
-  $('pair_n').textContent = `${Object.keys(pairMap).length} 个 key · ${pRows.length} 条 key×模型 组合`;
-  table($('tbl_pair'), ['key', '模型', '请求', '占该 key', '输入', '输出', '命中'], pRows, '该口径/区间没有请求', pVals, [0, 1], 22);
-  renderSessions(d);                                                 // 按会话（仅在该子页请求了 sessions 维度时才有数据）
+  const mK = rowsOf(d.by_key); table($('tbl_key'), head('key'), mK.rows, '', mK.vals, [0]);
   if (SUB === 'recent' && !reqFilterActive() && REQ_PAGE === 1) loadRequests();   // 无筛选且在第 1 页时跟随自动刷新
-}
-
-/* ---------- 按会话（session id） ---------- */
-// 数据来自 /api/stats?sessions=1 的 by_session；空会话 id 与网关自动填的缺省 id（key 的 session_id、供应商固定头）
-// 已在服务端排除，所以这里只渲染真实会话。
-function sidCell(sid) {
-  const short = sid.length > 12 ? sid.slice(0, 12) + '…' : sid;
-  return `<span class="sidcopy" data-sid="${esc(sid)}" title="${esc(sid)}（点击复制）">${esc(short)}</span>`;
-}
-function renderSessions(d) {
-  const el = $('tbl_session');
-  if (!el) return;
-  const o = d.by_session;
-  if (!o) {                       // 服务端还是旧版本：别让表格停在上一轮数据上
-    el._T = null;
-    el.innerHTML = '<tbody><tr><td class="msg">服务端还是旧版本（不支持 sessions 维度），重启网关后可用</td></tr></tbody>';
-    $('s_n').textContent = '';
-    return;
-  }
-  const m = d.session_meta || {};
-  const H9 = ['请求', '输入', '输出', 'tok/s', '字节(↑/↓)', '缓存', '命中', 'TTFT', '总时长', '推理'];
-  const rows = [], vals = [];
-  for (const [sid, v] of Object.entries(o)) {
-    const keys = v.keys || [], models = v.models || [];
-    const mTxt = models.length
-      ? models.slice(0, 2).map(esc).join('、') + (models.length > 2 ? ` <span class="dim">+${models.length - 2}</span>` : '')
-      : '—';
-    rows.push([sidCell(sid), keys.length ? keys.map(esc).join('、') : '—', mTxt, v.last ? fmtDT(v.last) : '—',
-      fmt(v.requests), fmt(v.in), fmt(v.out), tpsTxt(v.tps), `${fmtB(v.bytes_in)} / ${fmtB(v.bytes_out)}`,
-      fmt(v.cached), hitCell(v), ms(v.avg_ttft), ms(v.avg_ms), fmt(v.reasoning)]);
-    vals.push([sid, keys.length, models.length, v.last || 0, v.requests || 0, v.in || 0, v.out || 0, v.tps || 0,
-      (v.bytes_in || 0) + (v.bytes_out || 0), v.cached || 0, v.in ? v.cached / v.in : 0, v.avg_ttft || 0, v.avg_ms || 0, v.reasoning || 0]);
-  }
-  $('s_n').innerHTML = `${Object.keys(o).length} 个会话 · ${fmt(m.requests || 0)} 次请求`
-    + `<span class="dim"> · 已排除 ${m.default_ids || 0} 个缺省会话 id 与空值</span>`;
-  table(el, ['会话', 'key', '模型', '最近活动', ...H9], rows,
-    '当前口径/区间内没有带会话 id 的请求（空值与缺省 id 不纳入统计）', vals, [2], 24);
-  el.querySelectorAll('[data-sid]').forEach(x => x.onclick = () => copySid(x.dataset.sid));
-}
-async function copySid(sid) {
-  try {
-    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(sid); toast('已复制会话 id'); return; }
-    throw new Error('no clipboard');
-  } catch {
-    try {   // 回退：非 https / 无剪贴板权限时用临时 textarea
-      const ta = document.createElement('textarea');
-      ta.value = sid; ta.style.position = 'fixed'; ta.style.opacity = '0';
-      document.body.appendChild(ta); ta.select();
-      const ok = document.execCommand('copy');
-      ta.remove();
-      toast(ok ? '已复制会话 id' : '复制失败，请手动选择复制', !ok);
-    } catch { toast('复制失败，请手动选择复制', 1); }
-  }
-}
-
-/* ---------- key × 模型 分布 ---------- */
-function distCell(k) {
-  const rows = (STATS && STATS.by_key_model && STATS.by_key_model[k]) || [];
-  if (!rows.length) return '<span class="dim">—</span>';
-  const total = rows.reduce((s, x) => s + (x.requests || 0), 0) || 1;
-  const short = (m) => String(m || '').replace(/^[^/]*\//, '');
-  const top = rows.slice(0, 2).map(x => `${esc(short(x.model))} <span class="dim">${Math.round(x.requests / total * 100)}%</span>`).join('<span class="dim"> · </span>');
-  const more = rows.length > 2 ? ` <span class="dim">+${rows.length - 2}</span>` : '';
-  return `<span class="cyan" data-dist="${esc(k)}" style="cursor:pointer;text-decoration:underline dotted" title="点开看这个 key 的完整模型分布">${top}${more}</span>`;
-}
-function openKeyDist(k) {
-  const rows = (STATS && STATS.by_key_model && STATS.by_key_model[k]) || [];
-  const total = rows.reduce((s, x) => s + (x.requests || 0), 0) || 1;
-  $('dist_title').textContent = `key「${k}」用到的模型（${rows.length} 个）`;
-  table($('tbl_dist'), ['模型', '请求', '占比', '输入', '输出', '命中'],
-    rows.map(x => [esc(x.model), fmt(x.requests), (x.requests / total * 100).toFixed(1) + '%', fmt(x.in), fmt(x.out), x.in ? (x.cached / x.in * 100).toFixed(0) + '%' : '—']),
-    '这个 key 在当前口径 / 时间范围内没有请求',
-    rows.map(x => [x.model, x.requests, x.requests / total, x.in, x.out, x.in ? x.cached / x.in : 0]), [0], 20);
-  $('dist_ovl').classList.remove('hidden');
-}
-$('dist_x').onclick = () => $('dist_ovl').classList.add('hidden');
-$('dist_ovl').onclick = (e) => { if (e.target === $('dist_ovl')) $('dist_ovl').classList.add('hidden'); };
-
-/* ---------- 上游额度：按组成员拆分（用量 + 剩余额度） ---------- */
-let POOLH = null, POOLH_AT = 0;
-async function poolHealthFresh(force) {
-  if (!force && POOLH && Date.now() - POOLH_AT < 20000) return POOLH;
-  try { POOLH = await api('/api/pool/health'); POOLH_AT = Date.now(); } catch { POOLH = POOLH || {}; }
-  return POOLH;
-}
-async function renderPoolUsage(d) {
-  const box = $('quotapool'); if (!box) return;
-  if (DATA_MODE !== 'pool' && ADMIN()) {
-    box.innerHTML = '<div class="hint">当前是「网关直接转发」口径。成员用量与剩余额度在「走上游组」那一侧看。</div>';
-    return;
-  }
-  const pools = ((CONF && CONF.pools) || []).filter(p => ADMIN() || p.joined !== false);
-  if (!pools.length) { box.innerHTML = '<div class="hint">还没有加入任何上游组，去「上游组」页把自己的供应商加进一个组。</div>'; return; }
-  const h = await poolHealthFresh();
-  const quota = h.quota || {}, byProv = d.by_provider || {};
-  const groupUse = d.pool_usage || null;               // 普通用户：组内全部成员的用量（共享额度视角）
-  const labels = { rolling: '5小时', weekly: '本周', monthly: '本月' };
-  const rows = [], vals = [];
-  for (const p of pools) for (const m of (p.members || [])) {
-    const prov = m.provider || m;
-    const u = groupUse ? ((groupUse[p.name] || {})[prov] || {}) : (byProv[prov] || {});
-    const q = quota[prov] || {}, win = q.windows || {};
-    const tight = Object.entries(win).filter(([, v]) => v && v.percent != null)
-      .map(([k2, v]) => ({ label: labels[k2] || k2, ...v })).sort((a, b2) => b2.percent - a.percent)[0];
-    const remain = q.headroom == null ? null : q.headroom;
-    rows.push([
-      `<span class="dim">${esc(p.name)}</span>`,
-      `<b>${esc(prov)}</b>`,
-      fmt(u.requests || 0),
-      `${fmt(u.in || 0)} / ${fmt(u.out || 0)}`,
-      remain == null
-        ? `<span class="dim" title="${esc(q.error || '未配置额度')}">未配置</span>`
-        : `<span class="${pctCls(q.percent == null ? 0 : q.percent)}">${remain}%</span><span class="dim" style="font-size:calc(var(--fs)*0.78)">${q.source === 'local' ? ' 本地估算' : ''}</span>`,
-      tight ? `<span class="dim">${tight.label} · ${resetAt(tight.resets_at)}</span>` : '<span class="dim">—</span>',
-    ]);
-    vals.push([p.name, prov, u.requests || 0, u.in || 0, remain == null ? -1 : remain, tight ? tight.resets_at : '']);
-  }
-  box.innerHTML = `<div class="dim" style="font-size:calc(var(--fs)*0.85);margin-bottom:6px">按组成员拆分：${groupUse ? '组内全部成员的用量（共享额度视角，不是只算你自己的 key）' : '用量跟随上面的时间口径 +「走上游组」口径'}；剩余额度来自额度探测（缓存约 60s，非 0 不代表实时）</div>
-    <div class="tblwrap"><table id="tbl_pooluse"></table></div>`;
-  table($('tbl_pooluse'), ['组', '上游', '请求', '输入 / 输出', '剩余额度', '最紧窗口重置'], rows, '暂无', vals, [0, 1], 20);
 }
 
 /* ---------- 最近请求：筛选 + 查询历史 ---------- */
@@ -1624,10 +1030,7 @@ function renderReqRows(items) {
   table($('tbl_recent'), REQ_HEAD, items.map(r => {
     const ip = inProto(r), op = r.format;
     return [
-      `<span class="tcell" title="${esc(new Date(r.ts).toLocaleString('zh-CN', { hour12: false }))}">` +
-      `<span>${new Date(r.ts).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>` +
-      (r.osid ? `<span class="p osid" title="上游会话 id：${esc(r.osid)}">${esc(r.osid)}</span>` : '') +
-      `</span>`,
+      new Date(r.ts).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       `<span class="dim">${esc(r.ip || '-')}</span>`, esc(r.key),
       esc(r.model) + ((r.model && r.upstream_model && !String(r.model).endsWith('/' + r.upstream_model))   // 上游名通常＝模型名去掉前缀，只有真别名时才附上
         ? ` <span class="dim">→ ${esc(r.upstream_model)}</span>` : ''),
@@ -1659,14 +1062,11 @@ function reqQueryBody() {
   if ($('f_to').value) body.until = new Date($('f_to').value).getTime();
   return body;
 }
-let REQ_SEQ = 0;                                     // 同上：请求列表也有并发覆盖问题（手动翻页 + 自动刷新）
 async function loadRequests(page) {
   if (page) REQ_PAGE = page;
-  const seq = ++REQ_SEQ;
   let d;
   try { d = await api('/api/stats/requests', reqQueryBody()); }
-  catch (e) { if (seq === REQ_SEQ) $('f_info').innerHTML = `<span class="red">查询失败：${esc(e.message)}</span>`; return; }
-  if (seq !== REQ_SEQ) return;                       // 更新的查询已在跑 → 丢弃这次
+  catch (e) { $('f_info').innerHTML = `<span class="red">查询失败：${esc(e.message)}</span>`; return; }
   REQ_PAGES = Math.max(1, Math.ceil(d.total / reqPageSize()));
   if (REQ_PAGE > REQ_PAGES) { REQ_PAGE = REQ_PAGES; return loadRequests(); }   // 页码越界（如改了每页条数）
   const keepList = (id, list, all) => {
@@ -1847,7 +1247,7 @@ $('m_probe_shown').onclick = () => {
 };
 
 /* 供应商列表：正式 / 测试 两组，各自可折叠（测试组默认折叠，状态存 localStorage） */
-const PV_HEAD = ['供应商', 'Base URL', '前缀', '协议', 'key', '模型数', '参与统计', '操作'];
+const PV_HEAD = ['供应商', 'Base URL', '前缀', 'key', '模型数', '参与统计', '操作'];
 const PV_COLLAPSE_KEY = 'gw_pv_collapsed';
 let PV_COLLAPSED = { real: false, test: true };
 try { PV_COLLAPSED = Object.assign(PV_COLLAPSED, JSON.parse(localStorage.getItem(PV_COLLAPSE_KEY) || '{}') || {}); } catch { }
@@ -1860,7 +1260,6 @@ function pvRow(p) {
     (p.reasoning_echo ? ' <span class="pill" title="reasoning_echo：保思维链">回灌</span>' : '') +
     (p.efforts && p.efforts.length ? ` <span class="pill" title="供应商级默认推理档位（模型级可覆盖）">档位 ${p.efforts.join('/')}</span>` : ''),
     `<span class="dim">${esc(p.base_url)}</span>`, esc(p.prefix || '-'),
-    p.format ? `<span class="pill" title="供应商级默认协议（模型级可覆盖）">${esc(p.format)}</span>` : '<span class="dim">自动</span>',
     p.has_key ? '<span class="green">已设置</span>' : '<span class="red">未设置</span>',
     p.models,
     `<label title="不参与统计：该供应商的流量不计入 概览 / 按模型 / 按上游（「最近请求」始终全量显示）。&#10;状态只存在本浏览器，不改配置、不改数据库。&#10;默认：base_url 指向本机（mock/测试上游）的不参与统计。" style="display:flex;gap:6px;align-items:center;justify-content:center;cursor:help"><input type="checkbox" data-pstat="${esc(p.name)}" style="width:auto"${inS ? ' checked' : ''}><span class="dim" style="font-size:calc(var(--fs)*0.8)">${inS ? '参与' : '不参与'}</span></label>`,
@@ -1916,286 +1315,11 @@ function renderProviders() {
   });
   renderProviderSelect();
 }
-/* ---------- 上游组（多上游负载均衡 / 容灾） ---------- */
-let PL_HEALTH = {}, PL_INFLIGHT = {}, PL_EDIT = null, PL_INITED = false, PL_QUOTA = {};
-async function loadPoolHealth() {
-  try {
-    const r = await api('/api/pool/health');
-    PL_HEALTH = r.pools || {}; PL_INFLIGHT = r.inflight || {}; PL_QUOTA = r.quota || {};
-  } catch { PL_HEALTH = {}; PL_INFLIGHT = {}; PL_QUOTA = {}; }
-}
-function quotaCell(p) {
-  const list = p.members || [];
-  if (!list.length) return '<span class="dim">—</span>';
-  return list.map(m => {
-    const q = PL_QUOTA[m.provider];
-    if (!q) return `<span class="pill">${esc(m.provider)} <span class="dim">无额度信息</span></span>`;
-    if (!q.ok) return `<span class="pill" title="${esc(q.error || '')}">${esc(m.provider)} <span class="red">查询失败</span></span>`;
-    const h = q.headroom;
-    const cls = h == null ? 'dim' : h >= 50 ? 'green' : h >= 20 ? 'amber' : 'red';
-    let tip;
-    if (q.source === 'official' && q.windows) {
-      const w = q.windows;
-      tip = [
-        w.rolling ? `5 小时窗口 ${w.rolling.percent}%` : '',
-        w.weekly ? `周窗口 ${w.weekly.percent}%` : '',
-        w.monthly ? `月窗口 ${w.monthly.percent}%` : '',
-        q.at ? '官方接口 · 更新于 ' + new Date(q.at).toLocaleTimeString('zh-CN', { hour12: false }) : '',
-      ].filter(Boolean).join('\n');
-    } else if (q.local) {
-      const l = q.local;
-      tip = `本地统计（${l.cycle} 周期）：已用 ${l.used} / ${l.amount} ${l.unit}\n${l.requests} 次请求 · 从 ${new Date(l.start).toLocaleString('zh-CN', { hour12: false })} 起算` +
-        (l.unpriced ? `\n有 ${l.unpriced} 条请求的模型不在价格表里（已跳过）` : '');
-    } else tip = '';
-    const src = q.source === 'official' ? '官方' : '本地';
-    return `<span class="pill" title="${esc(tip)}">${esc(m.provider)} <b class="${cls}">剩 ${h == null ? '?' : h}%</b><span class="dim"> ${src}</span></span>`;
-  }).join(' ');
-}
-function memberChips(p) {
-  const list = p.members || [];
-  if (!list.length) return '<span class="dim">—</span>';
-  return list.map(m => `<span class="pill" style="margin:1px 2px">${esc(m.provider)}${(m.weight || 1) > 1 ? ` <b class="amber">×${m.weight}</b>` : ''}${m.model ? ` <span class="dim">→ ${esc(m.model)}</span>` : ''}${m.mine ? ' <b class="green">我</b>' : ''}</span>`).join('');
-}
-function poolHealthCell(p) {
-  const h = PL_HEALTH[p.name] || {}, now = Date.now();
-  if (!(p.members || []).length) return '<span class="dim">—</span>';
-  const bad = [];
-  for (const m of p.members) {
-    const st = h[m.provider];
-    if (!st) continue;
-    if (st.until && st.until > now) bad.push(`${m.provider} 冷却 ${Math.ceil((st.until - now) / 1000)}s`);
-    else if (st.fails) bad.push(`${m.provider} 失败 ${st.fails}`);
-  }
-  return bad.length ? `<span class="red">${esc(bad.join(' · '))}</span>` : '<span class="green">全部正常</span>';
-}
-async function renderPools() {
-  if (!ADMIN()) return renderPoolsUser();
-  return renderPoolsAdmin();
-}
-async function renderPoolsAdmin() {
-  if (!CONF) return;
-  await loadPoolHealth();
-  if (!PL_INITED) { PL_INITED = true; resetPoolForm(); }   // 首次进页：CONF 已就绪，才能填成员下拉
-  const pools = CONF.pools || [];
-  const routes = CONF.routes || [];
-  $('pl_sum').textContent = `${pools.length} 个组 · 覆盖 ${(CONF.models || []).filter(m => poolOfModel(m.id)).length} 个模型`;
-  table($('tbl_pools'),
-    ['组名', '策略', '成员', '额度（剩）', '冷却 / 阈值', '模型入口', '健康', '操作'],
-    pools.map(p => [
-      `<b>${esc(p.name)}</b>${p.user_join ? ' <span class="pill" title="允许普通用户把自己的上游加进来">开放加入</span>' : ''}`,
-      `${p.balance === false ? '<span class="pill" title="不参与均衡：固定用第一个成员，只有它失败/冷却才切换">均衡关</span> ' : ''}<span class="cyan">${esc(p.strategy || 'sticky')}</span>${p.strategy === 'quota' ? `<span class="dim"> 差&gt;${p.quota_margin == null ? 2 : p.quota_margin}pt</span>` : ''}${p.strategy === 'drain' ? `<span class="dim"> 月&lt;${p.drain_min_monthly == null ? 3 : p.drain_min_monthly}% 周&lt;${p.drain_min_weekly == null ? 5 : p.drain_min_weekly}%</span>` : ''}`,
-      memberChips(p),
-      quotaCell(p),
-      `${p.cooldown_sec || 60}s / ${p.max_fails || 2} 次`,
-      `<span class="dim">成员前缀自动接管 · ${(CONF.models || []).filter(m => poolOfModel(m.id) === p.name).length} 个模型</span>`,
-      poolHealthCell(p),
-      `<div class="effbtns" style="white-space:nowrap">
-         <button class="act" data-editpl="${esc(p.name)}">编辑</button>
-         <button class="danger" data-delpl="${esc(p.name)}" style="margin-left:4px">删除</button></div>`,
-    ]),
-    '还没有上游组。一个组 = 一个对外模型背后的多个上游（多订阅分摊 / 主备容灾）。', null, [2, 3, 5], [24, 30, 18]);
-  document.querySelectorAll('[data-editpl]').forEach(b => b.onclick = () => startEditPool(b.dataset.editpl));
-  document.querySelectorAll('[data-delpl]').forEach(b => b.onclick = () => delPool(b.dataset.delpl));
-}
-/* ---------- 普通用户的上游组页：看组 + 加入/退出 ---------- */
-async function renderPoolsUser() {
-  if (!CONF) return;
-  await loadPoolHealth();
-  const pools = CONF.pools || [];
-  const joined = pools.filter(p => p.joined);
-  $('pl_sum').textContent = `${pools.length} 个组 · 已加入 ${joined.length} 个 · 我的 key 只能用已加入组里的模型`;
-  table($('tbl_pools'),
-    ['组名', '策略', '成员', '状态', '额度（剩）', '健康', '我的操作'],
-    pools.map(p => {
-      const mine = (p.members || []).filter(m => m.mine);
-      return [
-        `<b>${esc(p.name)}</b>${p.user_join ? ' <span class="pill" title="管理员允许普通用户加入">开放加入</span>' : ''}`,
-        `<span class="cyan">${esc(p.strategy || 'sticky')}</span>`,
-        memberChips(p),
-        p.joined ? `<span class="green">已加入${mine.length ? `（我的上游 ${mine.length} 个）` : ''}</span>` : '<span class="dim">未加入</span>',
-        quotaCell(p),
-        poolHealthCell(p),
-        mine.length ? mine.map(m => `<button class="act danger" data-leave="${esc(p.name)}|${esc(m.provider)}">退出</button>`).join(' ')
-          : (p.joined ? '<span class="dim">—</span>' : '<span class="dim">在下面加入</span>'),
-      ];
-    }),
-    '还没有可加入的上游组，等管理员开放。', null, [2, 3, 4], [24, 16, 20]);
-  document.querySelectorAll('[data-leave]').forEach(b => b.onclick = () => leavePool(b.dataset.leave));
-  const sel = $('up_pool'), cur = sel.value;
-  const opts = pools.filter(p => p.user_join || p.joined);
-  sel.innerHTML = opts.length
-    ? opts.map(p => `<option value="${esc(p.name)}"${p.name === cur ? ' selected' : ''}>${esc(p.name)}${p.user_join ? '' : ' · 已加入'}</option>`).join('')
-    : '<option value="">没有可加入的组</option>';
-  $('up_prefix_hint').textContent = `u-${ME.name}-…/`;
-}
-async function leavePool(v) {
-  const [pool, provider] = String(v).split('|');
-  if (!pool || !provider) return;
-  if (!confirm(`退出「${pool}」并移除我的上游 ${provider}？\n\n如果这个上游没有加到其它组，会一并删除（路由 / 模型 / API key）。`)) return;
-  try {
-    const r = await api('/api/user/leave', { pool, provider });
-    CONF = r.config;
-    toast(`已退出 ${pool}${r.deleted ? '，并删除我的上游' : ''}`);
-    renderPools();
-  } catch (e) { toast('失败：' + e.message, 1); }
-}
-function drawUpModels() {
-  const ids = UPM;
-  const have = new Set(String($('up_models').value || '').split(/[,，\s]+/).filter(Boolean));
-  $('up_list').innerHTML = ids.length
-    ? ids.map(id => `<label title="${esc(id)}"><input type="checkbox" data-upm="${esc(id)}"${have.has(id) ? ' checked' : ''}><span>${esc(id)}</span></label>`).join('')
-    : '<div class="dim" style="padding:6px 4px">没有拉到模型，直接在上面手填也可以</div>';
-  $('up_list').classList.remove('hidden');
-  $('up_list').onchange = () => {
-    const sel = [...document.querySelectorAll('[data-upm]:checked')].map(x => x.dataset.upm);
-    if (sel.length) $('up_models').value = sel.join(', ');
-  };
-}
-let UPM = [];
-$('up_fetch').onclick = async () => {
-  const base = $('up_url').value.trim(), key = $('up_key').value.trim();
-  if (!base) return toast('先填 Base URL', 1);
-  $('up_fetchinfo').textContent = '拉取中…';
-  try {
-    const r = await api('/api/user/provider/fetch', { base_url: base, api_key: key });
-    UPM = r.models || [];
-    $('up_fetchinfo').textContent = `拉到 ${UPM.length} 个模型，勾选即可`;
-    drawUpModels();
-  } catch (e) { $('up_fetchinfo').textContent = '拉取失败：' + e.message; }
-};
-$('up_submit').onclick = async () => {
-  const body = {
-    pool: $('up_pool').value,
-    name: $('up_name').value.trim(),
-    base_url: $('up_url').value.trim(),
-    api_key: $('up_key').value.trim(),
-    user_agent: $('up_ua').value.trim(),
-    models: $('up_models').value.split(/[,，\s]+/).filter(Boolean),
-  };
-  if (!body.pool) return toast('没有可加入的组', 1);
-  if (!body.name || !body.base_url || !body.api_key || !body.models.length) return toast('组、名字、Base URL、API key、模型都要填', 1);
-  $('up_info').textContent = '提交中…';
-  try {
-    const r = await api('/api/user/provider', body);
-    CONF = r.config;
-    const all = (CONF.models || []).filter(m => String(m.id || '').startsWith(r.provider + '/')).map(m => m.id);
-    $('up_info').innerHTML = `已加入 <b>${esc(r.pool)}</b> · 前缀 <code>${esc(r.prefix)}/</code> · 模型 ${r.models.length} 个${all.length ? `<br><span class="dim">${esc(all.slice(0, 6).join(', '))}${all.length > 6 ? ' …' : ''}</span>` : ''}`;
-    $('up_name').value = ''; $('up_models').value = ''; $('up_list').classList.add('hidden'); $('up_fetchinfo').textContent = '';
-    toast('已加入 ' + r.pool);
-    renderPools();
-  } catch (e) { $('up_info').textContent = '失败：' + e.message; toast('失败：' + e.message, 1); }
-};
-function providerOptions(sel) {
-  const list = (CONF && CONF.providers) || [];
-  return list.map(p =>
-    `<option value="${esc(p.name)}"${p.name === sel ? ' selected' : ''}>${esc(p.name)}${p.test ? ' · 测试' : ''}</option>`).join('');
-}
-function addMemberRow(m) {
-  const wrap = $('pl_members');
-  const div = document.createElement('div');
-  div.className = 'mrow';
-  div.innerHTML = `<select class="pl_p">${providerOptions(m && m.provider)}</select>
-    <input class="pl_w" type="number" min="1" max="100" value="${(m && m.weight) || 1}" title="权重">
-    <input class="pl_m" placeholder="上游模型名覆盖（可选）" value="${esc((m && m.model) || '')}">
-    <input class="pl_caps" placeholder="能提供的模型，逗号分隔（留空=按该供应商路由自动）" value="${esc(((m && m.models) || []).join(', '))}">
-    <button class="danger pl_del" title="移除">×</button>`;
-  div.querySelector('.pl_del').onclick = () => div.remove();
-  wrap.appendChild(div);
-}
-function resetPoolForm() {
-  PL_EDIT = null;
-  $('pl_name').value = ''; $('pl_name').disabled = false;
-  $('pl_strategy').value = 'sticky';
-  $('pl_cooldown').value = '60'; $('pl_maxfails').value = '2'; $('pl_margin').value = '2'; $('pl_msg').value = '';
-  $('pl_dm').value = '3'; $('pl_dw').value = '5'; $('pl_dr').value = '5';
-  $('pl_balance').checked = true;
-  $('pl_userjoin').checked = false;
-  $('pl_members').innerHTML = '';
-  addMemberRow(null);
-  $('pl_title').textContent = '新建上游组';
-  $('pl_submit').textContent = '保存上游组';
-  $('pl_cancel').style.display = 'none';
-  $('pl_editinfo').classList.add('hidden');
-}
-function startEditPool(name) {
-  const p = (CONF.pools || []).find(x => x.name === name);
-  if (!p) return toast('组不存在：' + name, 1);
-  PL_EDIT = name;
-  $('pl_name').value = p.name; $('pl_name').disabled = true;
-  $('pl_strategy').value = p.strategy || 'sticky';
-  $('pl_cooldown').value = p.cooldown_sec || 60;
-  $('pl_maxfails').value = p.max_fails || 2;
-  $('pl_margin').value = (p.quota_margin == null ? 2 : p.quota_margin);
-  $('pl_dm').value = (p.drain_min_monthly == null ? 3 : p.drain_min_monthly);
-  $('pl_dw').value = (p.drain_min_weekly == null ? 5 : p.drain_min_weekly);
-  $('pl_dr').value = (p.drain_min_rolling == null ? 5 : p.drain_min_rolling);
-  $('pl_balance').checked = p.balance !== false;
-  $('pl_msg').value = p.fail_message || '';
-  $('pl_userjoin').checked = !!p.user_join;
-  $('pl_members').innerHTML = '';
-  (p.members || []).forEach(m => addMemberRow(m));
-  if (!(p.members || []).length) addMemberRow(null);
-  $('pl_title').textContent = '编辑上游组：' + p.name;
-  $('pl_submit').textContent = '保存修改';
-  $('pl_cancel').style.display = '';
-  $('pl_editinfo').innerHTML = `正在编辑 <span class="amber">${esc(p.name)}</span>：组名不可改（改名＝删了重建）；成员 / 权重 / 策略保存后立即生效。`;
-  $('pl_editinfo').classList.remove('hidden');
-}
-async function delPool(name) {
-  const p = (CONF.pools || []).find(x => x.name === name) || {};
-  const bound = (p.routes || []).length;
-  if (!confirm(`删除上游组「${name}」？${bound ? `\n\n它绑着 ${bound} 条路由，会被一起删掉（之后这些模型名将 404）。` : ''}`)) return;
-  try {
-    const r = await api('/api/config/pool/delete', { name, force: !!bound });
-    CONF = r.config;
-    toast(`已删除 ${r.removed_pool}${r.removed_routes ? `，同时删掉 ${r.removed_routes} 条路由` : ''}`);
-    resetPoolForm(); renderPools();
-  } catch (e) { toast('失败：' + e.message, 1); }
-}
-$('pl_add').onclick = () => addMemberRow(null);
-$('pl_cancel').onclick = () => { resetPoolForm(); toast('已退出编辑'); };
-$('pl_submit').onclick = async () => {
-  const members = [...document.querySelectorAll('#pl_members .mrow')].map(r => ({
-    provider: r.querySelector('.pl_p').value,
-    weight: Number(r.querySelector('.pl_w').value) || 1,
-    model: r.querySelector('.pl_m').value.trim(),
-    models: r.querySelector('.pl_caps').value.split(/[,，\s]+/).filter(Boolean),
-  })).filter(m => m.provider);
-  const name = $('pl_name').value.trim();
-  if (!name) return toast('组名不能为空', 1);
-  const body = {
-    name, strategy: $('pl_strategy').value,
-    balance: $('pl_balance').checked,
-    cooldown_sec: Number($('pl_cooldown').value) || 60,
-    max_fails: Number($('pl_maxfails').value) || 2,
-    quota_margin: $('pl_margin').value.trim() === '' ? undefined : Number($('pl_margin').value),
-    drain_min_monthly: $('pl_dm').value.trim() === '' ? undefined : Number($('pl_dm').value),
-    drain_min_weekly: $('pl_dw').value.trim() === '' ? undefined : Number($('pl_dw').value),
-    drain_min_rolling: $('pl_dr').value.trim() === '' ? undefined : Number($('pl_dr').value),
-    fail_message: $('pl_msg').value.trim(),
-    user_join: $('pl_userjoin').checked,
-    members,
-  };
-  try {
-    const r = await api('/api/config/pool', body);
-    CONF = r.config;
-    const covered = (CONF.models || []).filter(m => poolOfModel(m.id) === name).length;
-    toast(`已保存上游组 ${r.pool}（成员 ${r.members} 个，覆盖 ${covered} 个模型）`);
-    resetPoolForm(); renderPools();
-  } catch (e) { toast('失败：' + e.message, 1); }
-};
-/* 表单初始化推迟到首次打开「上游组」（此时 CONF 已加载，成员下拉才有供应商可选） */
-
 /* ---- 编辑已有供应商 ---- */
-// 替代 UA：不是浏览器式的 UA 会被 Cloudflare 拦成 error 1010（实测）。新建时默认预填。
-const ALT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 let EDIT_NAME = null, UA_ORIG = '', HDR_ORIG = '';
 function resetProviderForm() {
   EDIT_NAME = null; UA_ORIG = ''; HDR_ORIG = '';
-  ['p_name', 'p_prefix', 'p_url', 'p_env', 'p_ua', 'p_hdr', 'p_key', 'p_efforts', 'p_quota', 'p_qamount', 'p_qday'].forEach(id => { $(id).value = ''; $(id).disabled = false; });
-  $('p_fmt').value = '';                         // 供应商级默认协议：缺省＝自动探测
-  $('p_ua').value = ALT_UA;                      // 新建默认填替代 UA（编辑时会被 startEditProvider 覆盖回原值）
-  $('p_qmode').value = ''; $('p_qunit').value = 'tokens'; $('p_qcycle').value = 'month';
+  ['p_name', 'p_prefix', 'p_url', 'p_env', 'p_ua', 'p_hdr', 'p_key', 'p_efforts'].forEach(id => { $(id).value = ''; $(id).disabled = false; });
   $('p_echo').checked = false;
   $('p_test').checked = false;
   $('p_key').placeholder = 'sk-...';
@@ -2205,19 +1329,6 @@ function resetProviderForm() {
   $('p_editinfo').classList.add('hidden');
 }
 $('p_cancel').onclick = () => { resetProviderForm(); toast('已退出编辑'); };
-// 额度配置：什么都没填＝不配置（null）；填了地址就走官方接口，填数量就走本地统计
-function quotaFormValue() {
-  const url = $('p_quota').value.trim();
-  const mode = $('p_qmode').value;
-  const amount = $('p_qamount').value.trim();
-  if (!url && !mode && !amount) return null;
-  return {
-    url, mode, amount,
-    unit: $('p_qunit').value || 'tokens',
-    cycle: $('p_qcycle').value || 'month',
-    cycle_day: $('p_qday').value.trim(),
-  };
-}
 async function startEditProvider(name) {
   try {
     const d = await api('/api/config/provider/detail', { name });
@@ -2226,18 +1337,10 @@ async function startEditProvider(name) {
     $('p_name').value = d.name; $('p_name').disabled = true;
     $('p_prefix').value = d.prefix || ''; $('p_prefix').disabled = true;
     $('p_url').value = d.base_url || '';
-    $('p_fmt').value = d.format || '';
     $('p_env').value = d.api_key_env || '';
     $('p_key').value = ''; $('p_key').placeholder = d.has_key ? '已设置，留空即不改' : '未设置，填一个';
     $('p_ua').value = UA_ORIG;
     $('p_hdr').value = HDR_ORIG;
-    const qc = d.quota || {};
-    $('p_quota').value = qc.url || d.quota_url || '';
-    $('p_qmode').value = qc.mode || '';
-    $('p_qunit').value = qc.unit || 'tokens';
-    $('p_qamount').value = qc.amount || '';
-    $('p_qcycle').value = qc.cycle || 'month';
-    $('p_qday').value = qc.cycle_day || '';
     $('p_echo').checked = !!d.reasoning_echo;
     $('p_efforts').value = (d.efforts || []).join(', ');
     $('p_test').checked = !!d.test;
@@ -2257,13 +1360,13 @@ $('p_submit').onclick = async () => {
   try {
     if (EDIT_NAME) {
       const ua = $('p_ua').value.trim();
-      if (!ua && UA_ORIG && !confirm(`清空「${EDIT_NAME}」的 User-Agent？\n\n部分上游（有 WAF 前置的）会直接 403 error 1010，确认清空？`)) return;
+      if (!ua && UA_ORIG && !confirm(`清空「${EDIT_NAME}」的 User-Agent？\n\n部分上游（opencode / Cloudflare 前置）会直接 403 error 1010，确认清空？`)) return;
       if (!hdr && HDR_ORIG && !confirm(`清空「${EDIT_NAME}」的额外请求头？\n\n原值：${HDR_ORIG}\n确认清空？`)) return;
       const r = await api('/api/config/provider/update', {
-        name: EDIT_NAME, base_url: $('p_url').value.trim(), format: $('p_fmt').value,
+        name: EDIT_NAME, base_url: $('p_url').value.trim(),
         api_key: $('p_key').value.trim(), api_key_env: $('p_env').value.trim(),
         user_agent: ua, extra_headers: extra || {}, reasoning_echo: $('p_echo').checked, test: $('p_test').checked,
-        efforts: $('p_efforts').value.trim(), quota: quotaFormValue(),
+        efforts: $('p_efforts').value.trim(),
       });
       CONF = r.config;
       toast(`已更新 ${r.provider}：${(r.changed || []).join('、') || '无变化'}`);
@@ -2272,10 +1375,9 @@ $('p_submit').onclick = async () => {
     }
     const r = await api('/api/config/provider', {
       name: $('p_name').value.trim(), prefix: $('p_prefix').value.trim(), base_url: $('p_url').value.trim(),
-      format: $('p_fmt').value,
       api_key: $('p_key').value.trim(), api_key_env: $('p_env').value.trim(),
       user_agent: $('p_ua').value.trim(), extra_headers: extra, reasoning_echo: $('p_echo').checked,
-      test: $('p_test').checked, efforts: $('p_efforts').value.trim(), quota: quotaFormValue(),
+      test: $('p_test').checked, efforts: $('p_efforts').value.trim(),
     });
     CONF = r.config;
     resetProviderForm();
@@ -2358,10 +1460,7 @@ const fmtName = (f) => (!f || f === 'auto') ? '自动探测' : f;
 $('mm_submit').onclick = async () => {
   const id = $('mm_id').value.trim();
   const prefix = mmPrefix();
-  if (!id) {
-    const n = $('mm_panel').classList.contains('hidden') ? 0 : selIds().length;
-    return toast(n ? `已勾选 ${n} 个模型——批量加请点上面「① 批量添加」里的「添加所选」` : '先在下面「模型 ID」框里填模型名', 1);
-  }
+  if (!id) return toast('先填模型 ID', 1);
   if (!prefix) return toast('先选一个有前缀的供应商', 1);
   try {
     const r = await api('/api/config/model', { prefix, id, format: $('mm_fmt').value, efforts: $('mm_efforts').value.trim() });
@@ -2378,24 +1477,10 @@ async function renderKeys() {
   if (!CONF) return;
   let st = {};
   try { st = (await api('/api/stats')).by_key || {}; } catch { }
-  table($('tbl_keys'), ['key', 'key 值', '会话 / UA', '上游组', '可用模型', '协议', '协议互转', '请求', '输入', '输出', '字节(↑/↓)', '命中', '操作'],
-    CONF.keys.map(k => { const v = st[k.name] || {}; const lim = (k.models || []).length; const kp = k.pools || [];
-      const dynUser = k.owner ? (CONF.users || []).find(u => u.name === k.owner) : null;
-      const kpShow = dynUser ? (dynUser.pools || []) : kp;
-      const scope = kpShow.length ? (CONF.models || []).filter(m => kpShow.includes(poolOfModel(m.id))).length : (CONF.models || []).length;
-      return [`<span class="kname" title="${esc(k.name)}${k.owner ? ' · 归属 ' + esc(k.owner) : ''}">${esc(k.name)}</span>` + (ADMIN() && k.owner ? ` <span class="pill" title="归属用户">${esc(k.owner)}</span>` : ''),
+  table($('tbl_keys'), ['key', 'key 值', '协议', '协议互转', '请求', '输入', '输出', '字节(↑/↓)', '命中', '操作'],
+    CONF.keys.map(k => { const v = st[k.name] || {};
+      return [esc(k.name),
         `<span data-keycell="${esc(k.name)}" class="dim" style="word-break:break-all">sk-gw-••••••••••••</span>`,
-        (() => {
-          const ua = String(k.user_agent || ''), m = /Chrome\/(\d+)/.exec(ua);
-          const lbl = !ua ? 'UA 跟随供应商' : (m ? 'Chrome ' + m[1] : (ua.length > 14 ? ua.slice(0, 14) + '…' : ua));
-          return `<button class="act" data-ksess="${esc(k.name)}" title="会话 ID：${esc(k.session_id || '未设置')}&#10;UA：${esc(ua || '跟随供应商')}&#10;点击修改替代 UA">${k.session_id ? esc(String(k.session_id).slice(0, 8)) : '—'}<br><span class="dim" style="font-size:calc(var(--fs)*0.78)">${esc(lbl)}</span></button>`;
-        })(),
-        dynUser
-          ? `<span class="dim" title="普通用户的 key 自动跟随其加入的上游组，不能单独绑定">跟随 ${esc(k.owner)} 的组：${esc((dynUser.pools || []).join(', ') || '未加入')}</span>`
-          : (ADMIN()
-            ? `<button class="act" data-kpools="${esc(k.name)}" title="点开选择这个 key 绑定哪些上游组（不绑＝全部）"${kp.length ? '' : ' style="opacity:.72"'}>${kp.length ? '组：' + esc(kp.join(', ')) : '不绑定'}</button>`
-            : `<span class="dim" title="普通用户的 key 自动跟随自己加入的上游组（加入/退出组立即生效）">跟随我的组：${esc((CONF.me?.pools || []).join(', ') || '尚未加入')}</span>`),
-        `<button class="act" data-kmods="${esc(k.name)}" title="点开选择这个 key 能访问哪些模型（默认全部）"${lim ? '' : ' style="opacity:.72"'}>${lim ? '仅 ' + lim + ' 个' : '全部（' + scope + '）'}</button>`,
         `<select data-kproto="${esc(k.name)}">` + ['', 'chat', 'responses', 'messages'].map(p =>
           `<option value="${p}"${(k.protocol || '') === p ? ' selected' : ''}>${p || '自动'}</option>`).join('') + '</select>',
         `<label title="协议互转（实验性，默认关）：允许该 key 的 responses / messages 客户端跨协议使用其它协议的模型（走 chat 中枢互转）。&#10;代价：互转会丢原生保真度——加密推理链、图片块会被丢，Anthropic 流式的 input_tokens 只能补在 message_delta。&#10;同协议请求不受影响（仍走原生直通）。" style="display:flex;gap:6px;align-items:center;justify-content:center;cursor:help"><input type="checkbox" data-kint="${esc(k.name)}" style="width:auto"${k.interop ? ' checked' : ''}><span class="dim" style="font-size:calc(var(--fs)*0.8)">${k.interop ? '开' : '关'}</span></label>`,
@@ -2403,19 +1488,6 @@ async function renderKeys() {
         `<button class="act" data-rev="${esc(k.name)}">显示</button> ` +
         `<button class="act" data-copy="${esc(k.name)}">复制</button> ` +
         `<button class="act danger" data-delk="${esc(k.name)}">删除</button>`]; }), '还没有 key', null, [1]);
-  document.querySelectorAll('[data-kmods]').forEach(b => b.onclick = () => openKeyModels(b.dataset.kmods));
-  document.querySelectorAll('[data-kpools]').forEach(b => b.onclick = () => openKeyPools(b.dataset.kpools));
-  document.querySelectorAll('[data-ksess]').forEach(b => b.onclick = async () => {
-    const k = (CONF.keys || []).find(x => x.name === b.dataset.ksess) || {};
-    const ua = prompt(`key「${k.name}」的替代 User-Agent（留空＝用供应商自己配的 UA）：\n\n会话 ID（与 key 绑定；供应商写 __SESSION__ 时解析成它，换了等于换 prompt 缓存命名空间）：\n${k.session_id || '未设置'}`, k.user_agent || '');
-    if (ua === null) return;
-    try {
-      const r = await api('/api/config/key/session', { name: k.name, user_agent: ua });
-      CONF = r.config;
-      toast(`已保存：UA ${r.user_agent ? '已设置' : '跟随供应商'} · 会话 ${String(r.session_id || '').slice(0, 8)}`);
-      renderKeys();
-    } catch (e) { toast('失败：' + e.message, 1); }
-  });
   document.querySelectorAll('[data-kint]').forEach(c => c.onchange = async () => {
     try {
       const r = await api('/api/config/key/interop', { name: c.dataset.kint, enabled: c.checked });
@@ -2454,7 +1526,7 @@ async function renderKeys() {
   });
   document.querySelectorAll('[data-delk]').forEach(b => b.onclick = async () => {
     const name = b.dataset.delk;
-    if (!confirm(`删除客户端 key「${name}」？\n\n用这个 key 的客户端（酒馆 / Codex / 脚本…）会立刻 401，需要换 key。\n配置会先自动备份。`)) return;
+    if (!confirm(`删除客户端 key「${name}」？\n\n用这个 key 的客户端（聊天客户端 / IDE 插件 / 脚本…）会立刻 401，需要换 key。\n配置会先自动备份。`)) return;
     try {
       const r = await api('/api/config/key/delete', { name });
       CONF = r.config;
@@ -2463,355 +1535,204 @@ async function renderKeys() {
     } catch (e) { toast('失败：' + e.message, 1); }
   });
 }
-/* ---------- 客户端 key 的可用模型（白名单）弹层 ---------- */
-let KMOD_KEY = null, KMOD_SEL = new Set();
-// 模型归属哪个上游组（与网关同口径：按路由顺序取第一条匹配的规则；供应商路由看是否被某个组接管）
-function poolOwner(prov) {
-  const hits = (CONF.pools || []).filter(p => p.auto_providers !== false && (p.members || []).some(m => (m.provider || m) === prov));
-  return hits.length === 1 ? hits[0].name : '';
-}
-function poolOfModel(id) {
-  const mm = ((CONF && CONF.models) || []).find(x => x.id === id);
-  if (mm && mm.pool) return mm.pool;                  // 普通用户视图里服务端直接给了 pool
-  for (const r of (CONF && CONF.routes) || []) {
-    let hit = false;
-    try { hit = new RegExp(r.model_regex).test(id); } catch { continue; }
-    if (!hit) continue;
-    return r.pool || poolOwner(r.provider) || '';
-  }
-  return '';
-}
-const keyByName = (name) => (CONF.keys || []).find(x => x.name === name) || {};
-// key 能看到的模型范围：先按绑定的上游组过滤，再在里面做白名单勾选
-const kmodAll = () => {
-  const ps = keyByName(KMOD_KEY).pools || [];
-  const ids = (CONF.models || []).map(m => m.id);
-  return ps.length ? ids.filter(id => ps.includes(poolOfModel(id))) : ids;
-};
-function kmodCount() {
-  const all = kmodAll().length;
-  $('kmod_cnt').textContent = `已选 ${KMOD_SEL.size} / ${all}${KMOD_SEL.size === 0 || KMOD_SEL.size >= all ? '（＝全部可用）' : ''}`;
-}
-function drawKeyModels() {
-  const q = $('kmod_q').value.trim().toLowerCase();
-  const list = kmodAll().filter(id => !q || id.toLowerCase().includes(q));
-  $('kmod_list').innerHTML = list.length
-    ? list.map(id => `<label title="${esc(id)}"><input type="checkbox" data-km="${esc(id)}"${KMOD_SEL.has(id) ? ' checked' : ''}><span>${esc(id)}</span></label>`).join('')
-    : '<div class="dim" style="padding:8px 4px">没有匹配的模型</div>';
-  document.querySelectorAll('[data-km]').forEach(c => c.onchange = () => {
-    if (c.checked) KMOD_SEL.add(c.dataset.km); else KMOD_SEL.delete(c.dataset.km);
-    kmodCount();
-  });
-  kmodCount();
-}
-function openKeyModels(name) {
-  const k = (CONF.keys || []).find(x => x.name === name);
-  if (!k) return;
-  KMOD_KEY = name;
-  KMOD_SEL = new Set(k.models || []);
-  $('kmod_title').textContent = `key「${name}」可访问的模型`;
-  $('kmod_q').value = '';
-  drawKeyModels();
-  $('kmod_ovl').classList.remove('hidden');
-  $('kmod_q').focus();
-}
-function closeKeyModels() { $('kmod_ovl').classList.add('hidden'); KMOD_KEY = null; }
-$('kmod_x').onclick = closeKeyModels;
-$('kmod_ovl').onclick = (e) => { if (e.target === $('kmod_ovl')) closeKeyModels(); };
-$('kmod_q').oninput = drawKeyModels;
-$('kmod_all').onclick = () => {            // 全选＝当前搜索结果（搜索框为空时就是全部）
-  const q = $('kmod_q').value.trim().toLowerCase();
-  kmodAll().filter(id => !q || id.toLowerCase().includes(q)).forEach(id => KMOD_SEL.add(id));
-  drawKeyModels();
-};
-$('kmod_none').onclick = () => { KMOD_SEL.clear(); drawKeyModels(); };
-$('kmod_save').onclick = async () => {
-  if (!KMOD_KEY) return;
-  const all = kmodAll();
-  // 勾满（或一个不勾）＝存空数组＝全部可用：以后新加的模型自动可用，不会意外把新模型挡在外面
-  const models = (KMOD_SEL.size === 0 || KMOD_SEL.size >= all.length) ? [] : all.filter(id => KMOD_SEL.has(id));
-  try {
-    const r = await api('/api/config/key/models', { name: KMOD_KEY, models });
-    CONF = r.config;
-    toast(r.models.length ? `key ${r.key} 现在只能用 ${r.models.length} 个模型` : `key ${r.key} 恢复为全部模型可用`);
-    closeKeyModels();
-    renderKeys();
-  } catch (e) { toast('保存失败：' + e.message, 1); }
-};
-
-/* ---------- 客户端 key 的上游组绑定 ---------- */
-let KPOOL_KEY = null, KPOOL_SEL = new Set();
-function drawKeyPools() {
-  const pools = (CONF.pools || []);
-  const modelCount = (p) => (CONF.models || []).filter(m => poolOfModel(m.id) === p.name).length;
-  $('kpool_list').innerHTML = pools.length
-    ? pools.map(p => {
-        const n = modelCount(p);
-        const warn = n === 0 ? ' <span class="red">0 个模型（组没绑路由？）</span>' : ` <span class="dim">· ${n} 个模型</span>`;
-        return `<label title="${esc(p.name)}"><input type="checkbox" data-kp="${esc(p.name)}"${KPOOL_SEL.has(p.name) ? ' checked' : ''}><span>${esc(p.name)} <span class="dim">· ${(p.members || []).length} 家 / ${(p.routes || []).length} 条路由</span>${warn}</span></label>`;
-      }).join('')
-    : '<div class="dim" style="padding:8px 4px">还没有上游组，先去「上游组」页建一个</div>';
-  document.querySelectorAll('[data-kp]').forEach(c => c.onchange = () => {
-    if (c.checked) KPOOL_SEL.add(c.dataset.kp); else KPOOL_SEL.delete(c.dataset.kp);
-    $('kpool_cnt').textContent = KPOOL_SEL.size ? `已选 ${KPOOL_SEL.size} 个组（只可见这些组里的模型）` : '不绑定（可用全部模型）';
-  });
-  $('kpool_cnt').textContent = KPOOL_SEL.size ? `已选 ${KPOOL_SEL.size} 个组（只可见这些组里的模型）` : '不绑定（可用全部模型）';
-}
-function openKeyPools(name) {
-  KPOOL_KEY = name;
-  KPOOL_SEL = new Set(keyByName(name).pools || []);
-  $('kpool_title').textContent = `key「${name}」绑定的上游组`;
-  drawKeyPools();
-  $('kpool_ovl').classList.remove('hidden');
-}
-function closeKeyPools() { $('kpool_ovl').classList.add('hidden'); KPOOL_KEY = null; }
-$('kpool_x').onclick = closeKeyPools;
-$('kpool_ovl').onclick = (e) => { if (e.target === $('kpool_ovl')) closeKeyPools(); };
-$('kpool_save').onclick = async () => {
-  if (!KPOOL_KEY) return;
-  // 防呆：绑的组覆盖 0 个模型（通常是组没绑路由 / 模型没进清单）→ 这个 key 会直接看不到任何模型
-  if (KPOOL_SEL.size) {
-    const n = (CONF.models || []).filter(m => KPOOL_SEL.has(poolOfModel(m.id))).length;
-    if (n === 0 && !confirm('这些组当前覆盖 0 个模型（多半是「上游组」里没绑定路由，或模型还没加进模型列表）。\n\n绑上之后这个 key 会看不到任何模型、所有请求都会被 403。仍要保存吗？')) return;
-  }
-  try {
-    const r = await api('/api/config/key/pools', { name: KPOOL_KEY, pools: [...KPOOL_SEL] });
-    CONF = r.config;
-    const scope = r.pools.length ? (CONF.models || []).filter(m => r.pools.includes(poolOfModel(m.id))).length : (CONF.models || []).length;
-    toast(r.pools.length ? `key ${r.key} 已绑定：${r.pools.join(', ')}（可见 ${scope} 个模型）` : `key ${r.key} 已取消绑定（可用全部模型）`);
-    closeKeyPools();
-    renderKeys();
-  } catch (e) { toast('失败：' + e.message, 1); }
-};
-
 $('k_submit').onclick = async () => {
   try {
-    const r = await api('/api/config/key', { name: $('k_name').value.trim(), user_agent: $('k_ua').value.trim() });
+    const r = await api('/api/config/key', { name: $('k_name').value.trim() });
     CONF = r.config;
-    $('k_out').innerHTML = `已生成（只显示这一次，请立刻保存）：<br><code>${esc(r.name)} = ${esc(r.key)}</code>`
-      + `<br><span class="dim">会话 ID：<code>${esc(r.session_id || '')}</code>${r.user_agent ? ' · UA：' + esc(r.user_agent) : ' · UA：跟随供应商'}</span>`;
+    $('k_out').innerHTML = `已生成（只显示这一次，请立刻保存）：<br><code>${esc(r.name)} = ${esc(r.key)}</code>`;
     toast('已生成 key ' + r.name);
     $('k_name').value = '';
     renderKeys();
   } catch (e) { toast('失败：' + e.message, 1); }
 };
 
-/* ---------- 面板用户（管理员） ---------- */
-function renderUsers() {
-  if (!CONF || !ADMIN()) return;
-  const us = CONF.users || [];
-  $('us_sum').textContent = `${us.length} 个账号 · 管理员 ${us.filter(u => u.role === 'admin').length}`;
-  table($('tbl_users'),
-    ['用户名', '角色', '上游', 'key', '加入的组', '操作'],
-    us.map(u => [
-      `<b>${esc(u.name)}</b>${u.virtual ? ' <span class="pill" title="来自 dashboard_auth 的 Basic 账号">Basic</span>' : ''}`,
-      u.role === 'admin' ? '<span class="amber">管理员</span>' : '<span class="cyan">普通用户</span>',
-      (u.providers || []).length ? (u.providers || []).map(x => `<span style="word-break:break-all">${esc(x)}</span>`).join('<br>') : '<span class="dim">—</span>',
-      (u.keys || []).length ? (u.keys || []).map(esc).join('<br>') : '<span class="dim">—</span>',
-      (u.pools || []).length ? esc((u.pools || []).join(', ')) : '<span class="dim">—</span>',
-      `<button class="act" data-uedit="${esc(u.name)}">编辑</button> ${u.virtual ? '<span class="dim" title="Basic 账号不能删除">Basic</span>' : `<button class="act danger" data-udel="${esc(u.name)}">删除</button>`}`,
-    ]), '还没有用户', null, [2, 3, 4], [20, 16, 16]);
-  document.querySelectorAll('[data-uedit]').forEach(b => b.onclick = () => {
-    const u = us.find(x => x.name === b.dataset.uedit); if (!u) return;
-    $('us_name').value = u.name; $('us_role').value = u.role; $('us_pass').value = '';
-    $('us_info').textContent = `编辑 ${u.name}` + (u.virtual ? '（Basic 账号：这里改的是面板登录密码，不影响浏览器 Basic 弹窗）' : '');
-    $('us_cancel').style.display = '';
-    $('us_name').focus();
-  });
-  document.querySelectorAll('[data-udel]').forEach(b => b.onclick = async () => {
-    const name = b.dataset.udel;
-    const u = us.find(x => x.name === name) || {};
-    if (!confirm(`删除用户「${name}」？\n\n他/她的 key 会立刻失效；拥有的上游会从组里摘掉并删除。`)) return;
-    try {
-      let r;
-      try { r = await api('/api/config/user/delete', { name }); }
-      catch (e) {
-        if (!/还拥有/.test(e.message)) throw e;
-        if (!confirm(e.message + '\n\n继续＝强制删除他的全部上游与 key。')) return;
-        r = await api('/api/config/user/delete', { name, force: true });
-      }
-      CONF = r.config;
-      toast(`已删除用户 ${name}`);
-      renderUsers();
-    } catch (e) { toast('失败：' + e.message, 1); }
-  });
-}
-$('us_submit').onclick = async () => {
-  const body = { name: $('us_name').value.trim(), password: $('us_pass').value, role: $('us_role').value };
-  if (!body.name) return toast('用户名不能为空', 1);
-  $('us_info').textContent = '保存中…';
-  try {
-    const r = await api('/api/config/user', body);
-    CONF = r.config;
-    toast(`已保存用户 ${r.user}（${r.role === 'admin' ? '管理员' : '普通用户'}）`);
-    $('us_pass').value = ''; $('us_cancel').style.display = 'none'; $('us_info').textContent = '';
-    renderUsers();
-  } catch (e) { $('us_info').textContent = '失败：' + e.message; toast('失败：' + e.message, 1); }
-};
-$('us_cancel').onclick = () => { $('us_name').value = ''; $('us_pass').value = ''; $('us_role').value = 'user'; $('us_info').textContent = ''; $('us_cancel').style.display = 'none'; };
-
-/* ---------- 上游额度：余额 + 用量 ---------- */
+/* ---------- 上游额度：DeepSeek 余额 + OpenCode Go 用量 ---------- */
 const usd = (n) => '$' + Number(n || 0).toFixed(n >= 1 ? 2 : 4);
 const pctCls = (p) => p >= 80 ? 'red' : p >= 50 ? 'amber' : 'green';
 const resetAt = (iso) => iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
 async function renderQuota(force) {
-  if (!ADMIN()) return;                     // 普通用户没有全量上游额度权限（走组额度表）
   try {
     const d = await api('/api/upstream/quota' + (force ? '?refresh=1' : ''));
-    const ds = d.balance || {}, go = d.usage || {}, w = go.windows || {}, rq = w.reqs || {}, q = go.quota || {};
+    const ds = d.deepseek || {}, go = d.opencode || {}, w = go.windows || {}, rq = w.reqs || {}, q = go.quota || {};
+    const km = d.kimi || {};
     const dsCell = ds.ok
       ? `<span class="green">${ds.currency === 'CNY' ? '¥' : '$'}${Number(ds.total || 0).toFixed(2)}</span> <span class="dim" style="font-size:calc(var(--fs)*0.78)">赠送 ${Number(ds.granted || 0).toFixed(2)} / 充值 ${Number(ds.topped_up || 0).toFixed(2)}</span>`
       : `<span class="red">读取失败</span> <span class="dim" style="font-size:calc(var(--fs)*0.78)">${esc(ds.error || '')}</span>`;
+    const kmCell = km.ok
+      ? `<span class="green">${km.currency === 'USD' ? '$' : '¥'}${Number(km.available || 0).toFixed(2)}</span> <span class="dim" style="font-size:calc(var(--fs)*0.78)">代金券 ${Number(km.voucher || 0).toFixed(2)} / 现金 ${Number(km.cash || 0).toFixed(2)}</span>`
+      : `<span class="red">${km.error === 'KIMI_API_KEY 未配置' ? '未配置' : '读取失败'}</span> <span class="dim" style="font-size:calc(var(--fs)*0.78)">${esc(km.error || '')}</span>`;
     const qItem = (label, o) => o
       ? `<span class="${pctCls(o.percent)}">${o.percent}%</span><span class="dim" style="font-size:calc(var(--fs)*0.75)"> ${label}·${resetAt(o.resets_at)}重置</span>`
       : `<span class="dim">${label} —</span>`;
     const goCell = q.ok
       ? `${qItem('5小时', q.rolling)} &nbsp;·&nbsp; ${qItem('本周', q.weekly)} &nbsp;·&nbsp; ${qItem('本月', q.monthly)}`
       : `<span class="red">读取失败</span> <span class="dim" style="font-size:calc(var(--fs)*0.78)">${esc(q.error || '')}</span>`;
-    // ---- 订阅周期（月付，锚点＝官方下次续费时刻）----
-    const nowMs = Date.now();
-    const cs = go.cycle_stats || null;
-    const cyc = ((cs && cs.cycles) || []).filter(x => x.reqs > 0 || (nowMs >= x.start && nowMs < x.end));
-    const d2 = (ms) => new Date(ms).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit' });
-    const tok = (n) => { n = Number(n || 0); return n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'K' : String(n); };
-    const cycleBox = (() => {
-      if (!cs || !cyc.length) return '';
-      const cur = cyc.find(x => nowMs >= x.start && nowMs < x.end);
-      const daysLeft = cur ? Math.max(0, Math.ceil((cur.end - nowMs) / 86400e3)) : null;
-      const mq = q.monthly;
-      return `<div class="dim" style="font-size:calc(var(--fs)*0.85);margin-top:10px;border-top:1px dashed rgba(255,255,255,.14);padding-top:8px">
-          订阅周期 · 归一化额度按 $${cs.base} 一档计 · 下次续费 <b>${resetAt(new Date(cs.anchor).toISOString())}</b>
-          ${daysLeft != null ? `· 剩 <span class="cyan">${daysLeft} 天</span>` : ''}
-          ${mq ? `· 官方本期 <span class="${pctCls(mq.percent)}">${mq.percent}%</span>（≈ $${(mq.percent / 100 * cs.base).toFixed(2)} / $${cs.base}）` : ''}
-        </div><div class="tblwrap" style="margin-top:6px"><table id="tbl_cycle"></table></div>`;
-    })();
-    $('quota').innerHTML = `<div class="grid2" style="margin-bottom:8px">
-        <div><div class="dim" style="font-size:calc(var(--fs)*0.85)">上游余额</div>
+    const rows = (go.models || []).filter(m => m.d30 > 0 || m.h5 > 0);
+    $('quota').innerHTML = `<div class="grid3" style="margin-bottom:8px">
+        <div><div class="dim" style="font-size:calc(var(--fs)*0.85)">DeepSeek 余额</div>
           <div style="font-size:calc(var(--fs)*1.45)">${dsCell}</div></div>
-        <div><div class="dim" style="font-size:calc(var(--fs)*0.85)">上游官方额度（已用 / 各窗口独立重置）</div>
+        <div><div class="dim" style="font-size:calc(var(--fs)*0.85)">Kimi 余额</div>
+          <div style="font-size:calc(var(--fs)*1.45)">${kmCell}</div></div>
+        <div><div class="dim" style="font-size:calc(var(--fs)*0.85)">OpenCode Go 官方额度（已用 / 各窗口独立重置）</div>
           <div style="font-size:calc(var(--fs)*1.45)">${goCell}</div></div>
       </div>
-      ${cycleBox}
       <div class="dim" style="font-size:calc(var(--fs)*0.85)">网关侧明细：5 小时 <span class="amber">${usd(w.h5)}</span> · 本周 <span class="amber">${usd(w.w7)}</span> · 30 天 <span class="amber">${usd(w.d30)}</span>
         <span style="font-size:calc(var(--fs)*0.78)">（${rq.h5 || 0} / ${rq.w7 || 0} / ${rq.d30 || 0} 次）</span></div>`
-      + `<div class="hint" style="margin-top:6px">${esc(go.detail_note || '')}；订阅周期按续费锚点切分；* 含价格表未收录的模型（只按已计价部分折算）</div>`;
-    if (cyc.length) {
-      table($('tbl_cycle'), ['订阅周期', '请求', '输入 / 命中缓存 / 输出', '已产生费用', '占限额'],
-        cyc.map(x => {
-          const on = nowMs >= x.start && nowMs < x.end;
-          return [
-            `${d2(x.start)} → ${d2(x.end)}${on ? ' <span class="cyan">进行中</span>' : ''}`,
-            String(x.reqs),
-            `${tok(Math.max(0, x.in - x.cached))} / ${tok(x.cached)} / ${tok(x.out)}`,
-            (x.unpriced ? '<span class="dim" title="含价格表未收录的模型，只计请求数">' : '') + usd(x.cost) + (x.unpriced ? '*</span>' : ''),
-            `<span class="${hitCls(x.pct)}">${x.pct.toFixed(2)}%</span>`,
-          ];
-        }), '暂无数据', cyc.map(x => [x.end, x.reqs, x.in + x.out, x.cost, x.allow]), null, [0], 26);
-      const curCycle = cyc.find(x => nowMs >= x.start && nowMs < x.end);
-      const cm = (curCycle && curCycle.models) || [];
-      if (cm.length) {
-        const host = $('tbl_cycle') && $('tbl_cycle').parentElement;
-        const html = `<div class="dim" style="font-size:calc(var(--fs)*0.8);margin-top:8px">本周期按模型<span style="font-size:calc(var(--fs)*0.75)">（输入＝未命中缓存部分；占比＝该模型自身月限额）</span></div>
-           <div class="tblwrap" style="margin-top:4px"><table id="tbl_cycle_model"></table></div>`;
-        if (host) host.insertAdjacentHTML('afterend', html); else $('quota').insertAdjacentHTML('beforeend', html);
-        table($('tbl_cycle_model'), ['模型', '输入', '命中缓存', '输出', '已产生费用', '占该模型限额'],
-          cm.map(m => [
-            esc(m.model),
-            tok(Math.max(0, m.in - m.cached)),
-            tok(m.cached),
-            tok(m.out),
-            usd(m.cost),
-            m.pct == null
-              ? '<span class="green">免费</span>'
-              : `<span class="${hitCls(m.pct)}">${m.pct.toFixed(2)}%</span><span class="dim" style="font-size:calc(var(--fs)*0.75)"> /$${m.cap}</span>`,
-          ]), '暂无', cm.map(m => [m.model, m.in, m.cached, m.out, m.cost, m.pct || 0]), null, [0], 24);
-      }
+      + (rows.length ? '<div class="tblwrap" style="margin-top:6px"><table id="tbl_quota"></table></div>' : '')
+      + `<div class="hint" style="margin-top:6px">${esc(go.detail_note || '')}</div>`;
+    if (rows.length) {
+      table($('tbl_quota'), ['模型', '5 小时', '本周', '30 天', '月上限', '月占比'],
+        rows.map(m => [esc(m.model), usd(m.h5), usd(m.w7), usd(m.d30),
+          m.cap ? '$' + m.cap : (/-free$/.test(m.model) ? '<span class="green">免费</span>' : '<span class="dim">未计价</span>'),
+          m.cap ? `<span class="${hitCls(m.d30 / m.cap * 100)}">${(m.d30 / m.cap * 100).toFixed(1)}%</span>` : '—']),
+        '暂无', null, [0], 22);
     }
     $('q_at').textContent = '更新于 ' + new Date(d.ts).toLocaleTimeString('zh-CN', { hour12: false });
   } catch (e) { $('quota').innerHTML = `<span class="red">读取失败：${esc(e.message)}</span>`; }
 }
-$('q_refresh').onclick = () => { POOLH = null; POOLH_AT = 0; renderQuota(true); refreshStats(); };
+$('q_refresh').onclick = () => renderQuota(true);
 
-/* ---------- 网关 API 端点（状态栏 / 登录页，点一下复制） ---------- */
-async function loadApiBase() {
-  try {
-    const j = await (await fetch('/healthz')).json();
-    API_BASE = j && j.api_base ? String(j.api_base) : '';
-    if (!API_BASE) return;
-    $('lg_api_url').textContent = API_BASE;
-    $('lg_api').style.display = '';
-  } catch { }
+
+/* ---------- 周期用量预测 ---------- */
+const FC_NS = 'http://www.w3.org/2000/svg';
+function fcEl(t, a) { const e = document.createElementNS(FC_NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; }
+function fcMono(pts) {
+  const n = pts.length; if (n < 2) return '';
+  const dx = [], dy = [], m = [];
+  for (let i = 0; i < n - 1; i++) { dx[i] = pts[i+1][0]-pts[i][0]; dy[i] = pts[i+1][1]-pts[i][1]; m[i] = dy[i]/dx[i]; }
+  const t = new Array(n); t[0] = m[0]; t[n-1] = m[n-2];
+  for (let i = 1; i < n-1; i++) t[i] = (m[i-1]*m[i] <= 0) ? 0
+    : 3*(dx[i-1]+dx[i]) / ((2*dx[i]+dx[i-1])/m[i-1] + (dx[i]+2*dx[i-1])/m[i]);
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < n-1; i++) { const h = dx[i]/3;
+    d += `C${pts[i][0]+h},${pts[i][1]+t[i]*h} ${pts[i+1][0]-h},${pts[i+1][1]-t[i+1]*h} ${pts[i+1][0]},${pts[i+1][1]}`; }
+  return d;
 }
-async function copyApiBase() {
-  if (!API_BASE) return;
-  try {
-    if (!(navigator.clipboard && window.isSecureContext)) throw new Error('no clipboard');
-    await navigator.clipboard.writeText(API_BASE);
-    toast('已复制 API 端点');
-  } catch { toast('复制失败，请手动选择复制', 1); }
-}
-/* ---------- 启动 / 登录 ---------- */
-let TIMERS = false, LEGACY = false;
-async function boot() {
-  // 替代 UA 默认值：新建 key / 加入上游组时预填，留空则用供应商自己的 UA
-  if ($('k_ua')) $('k_ua').value = ALT_UA;
-  if ($('up_ua')) $('up_ua').value = ALT_UA;
-  if ($('p_ua') && !$('p_ua').value) $('p_ua').value = ALT_UA;
-  await loadApiBase();
-  let me = null, status = 0;
-  try {
-    const r = await fetch('/api/auth/me', { headers: TOKEN ? { 'x-gw-token': TOKEN } : {} });
-    status = r.status;
-    if (r.ok) me = await r.json();
-  } catch { }
-  if (!me || !me.user) {
-    if (status === 404) {
-      // 服务端没有 /api/auth/*：反代指错或跑着旧进程。不要冒充管理员渲染 UI（会把故障伪装成正常视图），
-      // 直接把问题显示出来。
-      LEGACY = false; ME = null;
-      showLogin('服务端缺少 /api/auth/*（旧版本进程或反向代理指错），请先确认网关版本');
-      return;
-    } else {
-      showLogin(TOKEN ? '登录已失效，请重新登录' : '');
-      return;
+const fcDayLabel = (dk) => { const d = new Date(dk * 864e5 + 8 * 36e5); return String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0'); };
+
+function renderForecast(force) {
+  api('/api/stats/go-forecast?tz=480' + (force ? '&_=' + Date.now() : '')).then(D => {
+    const svg = $('fc_chart'); if (!svg) return;
+    const planCap = D.plan && D.plan.cap;
+    if (!planCap) { $('fc_kpis').innerHTML = '<span class="dim">暂无可计价的 Go 流量</span>'; return; }
+    const P = v => v / planCap * 100;
+    const rows = (D.models || []).filter(m => m.spent >= 0.05 || m.proj >= 0.05).slice(0, 8);
+    const tight = rows.filter(m => m.cap).sort((a,b) => (b.proj/b.cap) - (a.proj/a.cap))[0];
+    const overHeat = tight && tight.raw > tight.cap;
+    const pctMain = P(D.totals.proj);
+    const nearCap = D.totals.proj > planCap;
+
+    $('fc_kpis').innerHTML = `
+      <div class="fckpi"><div class="lb">本周期已花</div>
+        <div class="v amber">${usd(D.totals.spent)} <span class="dim" style="font-size:calc(var(--fs)*0.95)">${P(D.totals.spent).toFixed(0)}%</span></div>
+        <div class="sub">官方口径 ${D.quota && D.quota.percent != null ? D.quota.percent + '%' : '—'}${D.totals.caliber === 'official' ? ` · 网关估算 ${usd(D.totals.gateway_spent)} 校准 ×${D.totals.scale}` : ' · 网关估算'}</div></div>
+      <div class="fckpi"><div class="lb">预计期末</div>
+        <div class="v ${nearCap ? 'red' : 'green'}">${usd(D.totals.proj)} <span class="dim" style="font-size:calc(var(--fs)*0.95)">${pctMain.toFixed(0)}%</span></div>
+        <div class="sub">区间 ${usd(D.totals.lo)} – ${usd(D.totals.hi)} · 剩 ${D.cycle.days_left} 天</div></div>
+      <div class="fckpi"><div class="lb">最紧模型</div>
+        <div class="v ${overHeat ? 'red' : 'green'}">${overHeat ? esc(tight.model) : '全模型安全'}</div>
+        <div class="sub">${tight ? `${esc(tight.model)} 期末占额度 ${(tight.proj/tight.cap*100).toFixed(0)}%${overHeat ? ' · 会触顶' : ` · 约 ${Math.round(tight.dtc)} 天后到 $${tight.cap}`}` : '—'}</div></div>`;
+
+    // 表
+    table($('fc_tbl'), ['模型', '已花', '日速率', '期末预计', '月额度', '占用'],
+      rows.map(m => { const p = m.cap ? m.proj / m.cap * 100 : null;
+        return [esc(m.model), usd(m.spent), usd(m.rate), usd(m.proj),
+          m.cap ? '$' + m.cap : (m.free ? '<span class="green">免费</span>' : '<span class="dim">未计价</span>'),
+          p == null ? '—' : `<span class="${p > 80 ? 'red' : (p > 60 ? 'amber' : 'green')}">${p.toFixed(0)}%</span>`];
+      }), '暂无', null, [0], 22);
+
+    // 图
+    svg.innerHTML = '';
+    const W = 900, H = 240, L = 60, R = 104, T = 16, B = 28, pw = W-L-R, ph = H-T-B;
+    const n = D.daily.length, ymax = 120;
+    const x = i => L + pw * i / Math.max(1, n - 1);
+    const y = v => T + ph * (1 - P(v) / ymax);
+    for (let g = 0; g <= 6; g++) {
+      const p = 20 * g, yy = T + ph * (1 - p / ymax);
+      const tx = fcEl('text', { x:L-8, y:yy+4, fill:'var(--dim2)', 'font-size':10, 'text-anchor':'end' });
+      tx.textContent = p + '%'; svg.appendChild(tx);
     }
-  } else {
-    ME = me.user;
-    $('login').classList.add('hidden');
-  }
-  // 普通用户停在管理员页签时拉回概览
-  const adminTab = ['models', 'providers', 'users'].includes(TAB);
-  if (!ADMIN() && adminTab) TAB = 'stats';
-  applyRole();
-  document.querySelectorAll('.nav button[data-tab]').forEach(x => x.classList.toggle('on', x.dataset.tab === TAB));
-  syncSub(); syncRange(); syncMode();
-  renderToggle(); renderCap();
-  await loadConfig(true);
-  if (TAB === 'stats') refreshStats();
-  else if (TAB === 'models') renderModels();
-  else if (TAB === 'providers') renderProviders();
-  else if (TAB === 'pools') renderPools();
-  else if (TAB === 'keys') renderKeys();
-  else if (TAB === 'users') { renderUsers(); renderUmUsage(); }
-  if (TIMERS) return;
-  TIMERS = true;
-  // 轮询：① 不带 sessions（不每 2 秒全量扫明细表）② 「按会话」子页直接跳过——
-  // 那一页的表依赖 by_session，轮询结果没有这个字段，会把表打成「服务端还是旧版本」
-  setInterval(() => { if (SUB === 'bysession') return; refreshStats(false); }, 2000);
-  setInterval(() => { if (ADMIN()) renderQuota(); }, 60000);
-  setInterval(() => {
-    if (!ME) return;
-    if (TAB === 'stats') return;
-    loadConfig(true).then(() => {
-      if (TAB === 'models') renderModels();
-      if (TAB === 'providers') renderProviders();
-      if (TAB === 'pools') renderPools();
-      if (TAB === 'keys') renderKeys();
-      if (TAB === 'users') renderUsers();
+    [0, Math.round((n-1)/4), Math.round((n-1)/2), Math.round(3*(n-1)/4), n-1].forEach(i => {
+      const tx = fcEl('text', { x:x(i), y:H-8, fill:'var(--dim2)', 'font-size':10, 'text-anchor':'middle' });
+      tx.textContent = fcDayLabel(D.daily[i].d); svg.appendChild(tx);
     });
-  }, 10000);
+    // 置信带
+    const cut = D.daily.findIndex(v => v.cum == null);
+    const startIdx = cut === -1 ? n - 1 : cut - 1;
+    const top = [[x(startIdx), y(D.daily[startIdx].cum)]], bot = [[x(startIdx), y(D.daily[startIdx].cum)]];
+    D.hi.forEach((v, k) => { top.push([x(startIdx + k + 1), y(v)]); bot.push([x(startIdx + k + 1), y(D.lo[k])]); });
+    let band = fcMono(top);
+    for (let i = bot.length - 1; i >= 0; i--) band += `L${bot[i][0]},${bot[i][1]}`;
+    svg.appendChild(fcEl('path', { d: band + 'Z', fill:'var(--amber)', 'fill-opacity':.16, stroke:'none' }));
+    // 100% 线
+    svg.appendChild(fcEl('line', { x1:L, x2:W-R, y1:y(planCap), y2:y(planCap), stroke:'var(--red)', 'stroke-width':1, 'stroke-dasharray':'3 4' }));
+    const pl = fcEl('text', { x:W-R+6, y:y(planCap)+4, fill:'var(--red)', 'font-size':10 }); pl.textContent = 'plan 100%'; svg.appendChild(pl);
+    // 实际
+    const actPts = D.daily.filter(v => v.cum != null).map((v, i) => [x(i), y(v.cum)]);
+    svg.appendChild(fcEl('path', { d: fcMono(actPts), fill:'none', stroke:'var(--cyan)', 'stroke-width':2.6 }));
+    // 预测（超 100% 段换深红）
+    const pts = [[x(startIdx), y(D.daily[startIdx].cum)], ...D.fc.map((v, k) => [x(startIdx + k + 1), y(v)])];
+    let cur = [pts[0]], curOver = P(D.daily[startIdx].cum) > 100;
+    const segs = [];
+    for (let k = 0; k < D.fc.length; k++) {
+      const p = pts[k + 1], o = P(D.fc[k]) > 100;
+      if (o !== curOver) { cur.push(p); segs.push([cur, curOver]); cur = [p]; curOver = o; }
+      else cur.push(p);
+    }
+    segs.push([cur, curOver]);
+    segs.forEach(([s, o]) => { if (s.length < 2) return;
+      svg.appendChild(fcEl('path', { d: fcMono(s), fill:'none', stroke: o ? '#e5342b' : 'var(--amber)',
+        'stroke-width': o ? 2.6 : 2.2, 'stroke-dasharray': o ? '7 4' : '6 4' })); });
+    // 今日线
+    const tx0 = x(startIdx);
+    svg.appendChild(fcEl('line', { x1:tx0, x2:tx0, y1:T, y2:H-B, stroke:'var(--dim2)', 'stroke-dasharray':'2 3', 'stroke-opacity':.6 }));
+    const tl = fcEl('text', { x:tx0+5, y:T+10, fill:'var(--dim2)', 'font-size':10 }); tl.textContent = '今天'; svg.appendChild(tl);
+    // 期末标签
+    const endT = fcEl('text', { x:W-R+6, y:Math.max(T+10, y(D.totals.proj)-6), fill: nearCap ? 'var(--red)' : 'var(--amber)', 'font-size':11 });
+    endT.textContent = '$' + D.totals.proj.toFixed(1) + ' · ' + pctMain.toFixed(0) + '%'; svg.appendChild(endT);
+    // 悬停
+    const tip = $('fc_tip');
+    svg.onmousemove = (e) => {
+      const r = svg.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width * W;
+      let i = Math.round((px - L) / pw * (n - 1)); i = Math.max(0, Math.min(n - 1, i));
+      const v = D.daily[i].cum != null ? D.daily[i].cum : D.fc[i - startIdx - 1];
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX - r.left + 12) + 'px';
+      tip.style.top = (e.clientY - r.top + 10) + 'px';
+      tip.innerHTML = `<span class="dim">${fcDayLabel(D.daily[i].d)}</span> · 累计 <span class="cyan">${usd(v)}</span> <span class="dim">(${P(v).toFixed(1)}%)</span>${D.daily[i].cum == null ? ' <span class="dim">· 预测</span>' : ''}`;
+    };
+    svg.onmouseleave = () => { tip.style.display = 'none'; };
+    $('fc_note').innerHTML = `${D.totals.caliber === 'official' ? '已按官方百分比校准（曲线与预测整体缩放）。' : ''}纵轴＝额度占用百分比，分母为 <span class="cyan">${esc(D.plan.model)}</span> 的月额度 $${planCap}（Go 档官方值）；其余模型在表内各自按自己额度算。` +
+      `周期 ${fcDayLabel(D.cycle.start)} → ${fcDayLabel(D.cycle.end)}（按 resets_at 反推，重置 ${esc((D.quota && D.quota.resets_at) || '') || '未知'}）。` +
+      (D.assumptions && D.assumptions.length ? ` <span class="amber">${esc(D.assumptions.join('；'))}</span>` : '');
+    $('fc_at').textContent = '更新于 ' + new Date(D.as_of).toLocaleTimeString('zh-CN', { hour12: false });
+  }).catch(e => {
+    const k = $('fc_kpis'); if (k) k.innerHTML = `<span class="red">预测不可用：${esc(e.message)}</span>`;
+  });
 }
-boot();
+$('fc_refresh').onclick = () => renderForecast(true);
+
+/* ---------- 启动 ---------- */
+syncSub();
+syncRange();
+renderToggle();
+renderCap();
+refreshStats();
+loadConfig(true);
+renderQuota();
+renderForecast();
+setInterval(refreshStats, 2000);
+setInterval(renderQuota, 60000);
+setInterval(renderForecast, 60000);
+setInterval(() => {
+  if (TAB === 'stats') return;
+  loadConfig(true).then(() => {
+    if (TAB === 'models') renderModels();
+    if (TAB === 'providers') renderProviders();
+    if (TAB === 'keys') renderKeys();
+  });
+}, 10000);
 </script>
 </body>
 </html>
